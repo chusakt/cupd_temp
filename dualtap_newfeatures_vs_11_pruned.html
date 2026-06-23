@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DualTap — New features vs 11, + pruning (RF tuned)</title>
+<style>
+  :root{
+    --bg:#0f1419;--card:#1a212b;--line:#2b3744;--txt:#e6edf3;--mut:#9fb0c0;
+    --pd:#ff6b6b;--ct:#46d39a;--key:#5aa7ff;--warn:#ffb454;--ok:#46d39a;--new:#c08cff;--gold:#ffd56b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Sarabun",Tahoma,Arial,sans-serif;
+       background:var(--bg);color:var(--txt);line-height:1.6;padding:32px 20px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  .sub{color:var(--mut);margin:0 0 8px;font-size:.95rem}
+  h2{font-size:1.15rem;margin:32px 0 10px;border-left:3px solid var(--new);padding-left:10px}
+  h3{font-size:1rem;margin:16px 0 6px;color:var(--mut)}
+  code{background:#0c1116;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.83em;color:#ffd9a0}
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.85rem;background:var(--card);
+        border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{background:#202a36;font-size:.74rem;text-transform:uppercase;letter-spacing:.02em;color:var(--mut)}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.best{background:rgba(255,213,107,.10)}
+  .scroll{overflow-x:auto;border-radius:10px}
+  .callout{background:#1d2630;border:1px solid var(--line);border-left:4px solid var(--warn);
+           border-radius:8px;padding:13px 16px;margin:14px 0;font-size:.9rem}
+  .callout.ok{border-left-color:var(--ok)}.callout.ok strong{color:var(--ok)}
+  .callout.new{border-left-color:var(--new)}.callout.new strong{color:var(--new)}
+  .callout strong{color:var(--warn)}
+  .small{color:var(--mut);font-size:.82rem}
+  .meta{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+  .mcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 15px;flex:1;min-width:115px}
+  .mcard .n{font-size:1.35rem;font-weight:700}
+  .mcard .l{color:var(--mut);font-size:.77rem}
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:14px 0;justify-content:center}
+  .blk{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:120px;max-width:215px;text-align:center;font-size:.8rem;display:flex;flex-direction:column;justify-content:center}
+  .blk .t{font-weight:700;font-size:.83rem;margin-bottom:2px}
+  .blk .d{color:var(--mut);font-size:.72rem;line-height:1.3}
+  .blk.a{border-color:#6b7d8f}.blk.b{border-color:var(--new)}.blk.c{border-color:var(--gold)}
+  .arrow{display:flex;align-items:center;color:var(--mut);font-size:1.25rem;padding:0 6px}
+  .bar-row{display:grid;grid-template-columns:135px 1fr 48px;gap:8px;align-items:center;margin:3px 0;font-size:.81rem}
+  .bwrap{background:#0c1116;border-radius:4px;overflow:hidden;height:15px}
+  .bar{height:15px;border-radius:4px;background:var(--key)} .bar.new{background:var(--new)}
+  .cm{display:grid;grid-template-columns:auto auto auto;gap:5px;max-width:300px;font-size:.8rem}
+  .cmcell{border:1px solid var(--line);border-radius:6px;padding:8px 5px;text-align:center}
+  .cmcell .v{font-size:1.15rem;font-weight:700}
+  .cmcell.tp,.cmcell.tn{border-color:var(--ok)} .cmcell.fp,.cmcell.fn{border-color:var(--pd)}
+  .cmhdr{color:var(--mut);font-size:.68rem;display:flex;align-items:center;justify-content:center;text-align:center}
+  .pill{display:inline-block;font-size:.74rem;padding:2px 8px;border-radius:6px;background:#243140;margin:2px}
+  .pill.kept{border:1px solid var(--ok);color:#bdf} .pill.drop{border:1px solid #3a4a5a;color:var(--mut);text-decoration:line-through}
+  .pill.new{border:1px solid var(--new);color:#d9c2ff}
+  .foot{color:var(--mut);font-size:.8rem;margin-top:28px;text-align:center}
+  svg{max-width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DualTap — ฟีเจอร์ใหม่ vs 11 ฟีเจอร์ + Pruning</h1>
+  <p class="sub">RandomForest (tuned) · 10-fold group CV (ไม่มี patient leak) · pooled OOF · 1,406 ไฟล์ / 1,189 ผู้ป่วย · 2026-06-22</p>
+
+  <div class="meta">
+    <div class="mcard"><div class="n">0.780</div><div class="l">AUC · 11 ฟีเจอร์</div></div>
+    <div class="mcard" style="border-color:var(--new)"><div class="n" style="color:var(--new)">0.791</div><div class="l">AUC · +12 ใหม่ (23)</div></div>
+    <div class="mcard" style="border-color:var(--gold)"><div class="n" style="color:var(--gold)">0.791</div><div class="l">AUC · pruned 13 ★</div></div>
+    <div class="mcard" style="border-color:var(--gold)"><div class="n" style="color:var(--gold)">0.730</div><div class="l">Acc · pruned 13 (สูงสุด)</div></div>
+  </div>
+
+  <h2>0. ที่มา &amp; ภาพรวมการพัฒนาโมเดล</h2>
+  <p class="small">
+    เอกสารนี้สรุปการทบทวนและปรับปรุงโมเดล ML ของงาน <strong>dualtap</strong> (คัดกรองพาร์กินสัน) ตั้งแต่โมเดลที่ใช้งานจริง (deployed) ไปจนถึงโมเดลที่เราเลือกใช้สุดท้าย.
+    ข้อมูล: <code>preselectPD</code> + <code>preselectControl</code> รวม <strong>1,406 ไฟล์ / 1,189 ผู้ป่วย</strong> (PD 622 / Control 784).
+    ทุกตัวเลขผ่าน <strong>10-fold StratifiedGroupKFold (seed 42, group = ผู้ป่วย)</strong> → ไม่มี patient leak, รายงานแบบ pooled out-of-fold.
+  </p>
+
+  <h3>0.1 จุดเริ่มต้น — ฟีเจอร์ต้นฉบับ 11 ตัว (โมเดล deployed / Branch A)</h3>
+  <p class="small">โมเดลที่ใช้งานจริงดึง <strong>11 ฟีเจอร์</strong> ต่อไฟล์ ด้วยฟังก์ชัน <code>extract_tapcount_statistics()</code> แล้วป้อนเข้า RandomForest. นี่คือฟีเจอร์ตั้งต้นทั้งหมด:</p>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>ฟีเจอร์ต้นฉบับ</th><th>ความหมาย</th></tr>
+    <tr><td>1</td><td><code>Score</code></td><td>คะแนนที่แอปคำนวณให้</td></tr>
+    <tr><td>2</td><td><code>Tap Count</code></td><td>จำนวนการแตะ (stroke) ทั้งหมด</td></tr>
+    <tr><td>3</td><td><code>Max Tap Points</code></td><td>จำนวนจุดสัมผัสมากสุดใน 1 แตะ</td></tr>
+    <tr><td>4</td><td><code>Std Tap Points</code></td><td>ส่วนเบี่ยงเบนของจำนวนจุดต่อแตะ</td></tr>
+    <tr><td>5</td><td><code>Mean Tap Points</code></td><td>จำนวนจุดเฉลี่ยต่อแตะ</td></tr>
+    <tr><td>6</td><td><code>Total Points</code></td><td>จุดสัมผัสรวมทุกแตะ</td></tr>
+    <tr><td>7</td><td><code>ppInsideToAll</code></td><td>สัดส่วนจุดที่อยู่ในรัศมีเป้า (ความแม่นยำ)</td></tr>
+    <tr><td>8</td><td><code>ppLeftToRight</code></td><td>สมดุลซ้าย-ขวา (นับต่อจุด)</td></tr>
+    <tr><td>9</td><td><code>tDiff_mean</code></td><td>ช่วงเวลาเฉลี่ยระหว่างแตะ</td></tr>
+    <tr><td>10</td><td><code>tDiff_max</code></td><td>ช่วงหยุดนานสุดระหว่างแตะ</td></tr>
+    <tr><td>11</td><td><code>tDiff_min</code></td><td>ช่วงแตะเร็วสุด</td></tr>
+  </table></div>
+  <p class="small">โมเดล deployed: <code>RandomForest</code> (100 trees, depth None, class_weight balanced) · ทำนายรายไฟล์ที่ <code>/predict_dualtap</code>. <strong>baseline บนชุดเต็ม = AUC 0.757 / Acc 0.696</strong>. ปัญหาที่พบ: ฟีเจอร์ <code>ppInsideToAll</code>/<code>ppLeftToRight</code> นิยามเปราะ (เพี้ยนตอน serving), โมเดล depth ไม่จำกัด (overfit), ไม่มีการเลือก threshold.</p>
+
+  <h3>0.2 ขั้นตอนการพัฒนา (ไล่เป็นลำดับ)</h3>
+  <div class="scroll"><table>
+    <tr><th>ขั้น</th><th>ทำอะไร</th><th>ผล (AUC)</th></tr>
+    <tr><td>① Baseline</td><td>รันฟีเจอร์ต้นฉบับ 11 ตัว + RF (deployed config) บนชุดเต็ม 10-fold group CV</td><td>0.757</td></tr>
+    <tr><td>② Fix features</td><td>ซ่อม <code>ppInsideToAll→mean_acc</code> (ระยะถึงเป้า/รัศมี, ต่อเนื่อง) และ <code>ppLeftToRight→ppLR_stroke</code> (นับสมดุลต่อ stroke)</td><td>0.772</td></tr>
+    <tr><td>③ Tune โมเดล</td><td>จูน RandomForest → 400 trees, max_depth 10, min_samples_leaf 4, max_samples 0.8</td><td>0.780</td></tr>
+    <tr><td>④ เทียบ 11 โมเดล</td><td>ลอง RF/GB/HistGB/MLP/SVM/KNN/LogReg/… → top-5 เสมอกัน ⇒ <em>เพดานอยู่ที่ฟีเจอร์ ไม่ใช่โมเดล</em></td><td>0.77–0.78</td></tr>
+    <tr><td>⑤ สร้างฟีเจอร์ใหม่</td><td>เพิ่ม 12 ฟีเจอร์เชิงสรีรวิทยา (จังหวะแปรปรวน, tremor, ความเร็ว, ล้า, ความสม่ำเสมอ)</td><td>0.791</td></tr>
+    <tr style="background:rgba(255,213,107,.10)"><td>⑥ Pruning ★</td><td>คัดเหลือ <strong>13 ฟีเจอร์</strong> สำคัญสุด (ตัดตัวซ้ำซ้อน/อ่อน)</td><td><strong>0.791</strong></td></tr>
+    <tr><td>⑦ SHAP</td><td>อธิบายฟีเจอร์ — ยืนยัน <code>tDiff_std</code>/<code>tDiff_cv</code> (จังหวะแปรปรวน) เป็นสัญญาณ PD ที่แรงสุด</td><td>—</td></tr>
+    <tr><td>⑧ Threshold คัดกรอง</td><td>หาจุดทำงานที่ Recall สูง — แนะนำ thr 0.275 (Sens 0.90)</td><td>—</td></tr>
+  </table></div>
+
+  <h3>0.3 โมเดลที่เลือกใช้ + performance สุดท้าย</h3>
+  <div class="callout ok">
+    <strong>โมเดลที่เลือก:</strong> <code>RandomForest(n_estimators=400, max_depth=10, min_samples_leaf=4, min_samples_split=5, max_samples=0.8, class_weight='balanced', random_state=42)</code> บน <strong>13 ฟีเจอร์ที่เลือก</strong>.
+  </div>
+  <div class="meta">
+    <div class="mcard" style="border-color:var(--ok)"><div class="n" style="color:var(--ok)">0.791</div><div class="l">ROC-AUC</div></div>
+    <div class="mcard"><div class="n">0.730</div><div class="l">Accuracy (thr 0.5)</div></div>
+    <div class="mcard"><div class="n">0.686</div><div class="l">F1</div></div>
+    <div class="mcard"><div class="n">0.664</div><div class="l">Sensitivity (thr 0.5)</div></div>
+    <div class="mcard"><div class="n">0.783</div><div class="l">Specificity (thr 0.5)</div></div>
+  </div>
+  <p class="small">
+    Confusion matrix (thr 0.5): TN 614 · FP 170 · FN 209 · TP 413.
+    <strong>โหมดคัดกรอง (แนะนำ): threshold 0.275</strong> → Sensitivity <strong>0.90</strong>, Specificity 0.39, NPV 0.83, พลาด PD เหลือ <strong>62/622 ราย</strong> (จาก 209 ที่ thr 0.5).
+    <br><strong>สรุปภาพรวม:</strong> ปรับจาก baseline <span class="num">AUC 0.757 / Acc 0.696</span> → <span class="num" style="color:var(--ok)">AUC 0.791 / Acc 0.730</span> โดยการซ่อมนิยามฟีเจอร์ + จูนโมเดล + เพิ่มฟีเจอร์เชิงสรีรวิทยา + คัดฟีเจอร์ — ทั้งหมดบน validation ที่ไม่มี patient leak.
+  </p>
+  <p class="small" style="color:var(--mut)">รายละเอียดแต่ละขั้นอยู่ในหัวข้อถัดไป (§1–§10): ฟีเจอร์ใหม่ &amp; pruning, confusion matrix, ROC, SHAP, threshold คัดกรอง, และภาคผนวกวิธีคำนวณครบทุกฟีเจอร์.</p>
+
+  <h2>1. แนวคิด: ฟีเจอร์ใหม่จากข้อมูลเดิม</h2>
+  <p class="small">บทเรียนก่อนหน้า: "เพดานอยู่ที่ฟีเจอร์ ไม่ใช่โมเดล" จึงสกัด <strong>12 ฟีเจอร์ใหม่เชิงสรีรวิทยา</strong> จาก dualtap.json ตัวเดิม (ไม่ต้องเก็บข้อมูลใหม่):</p>
+  <div class="scroll"><table>
+    <tr><th>กลุ่ม</th><th>ฟีเจอร์ใหม่</th><th>สื่อถึงอาการ PD</th></tr>
+    <tr><td>ความแปรปรวนจังหวะ</td><td><code>tDiff_std</code>, <code>tDiff_cv</code>, <code>tDiff_median</code>, <code>tDiff_slope</code></td><td>arrhythmia / จังหวะไม่สม่ำเสมอ + ช้าลงเรื่อยๆ</td></tr>
+    <tr><td>ความเร็ว</td><td><code>tap_rate</code>, <code>duration_s</code></td><td>bradykinesia (แตะช้า)</td></tr>
+    <tr><td>อาการล้า</td><td><code>fatigue_ratio</code></td><td>ครึ่งหลังช้ากว่าครึ่งแรก</td></tr>
+    <tr><td>อาการสั่น</td><td><code>spread_mean</code>, <code>spread_max</code>, <code>path_mean</code></td><td>tremor ระหว่างแตะ (จุดกระจาย/ลากยาว)</td></tr>
+    <tr><td>ความสม่ำเสมอ</td><td><code>acc_std</code>, <code>tapPts_cv</code></td><td>ความแม่นยำ/ขนาดแตะไม่คงที่</td></tr>
+  </table></div>
+
+  <h2>2. ผลเทียบ 11 vs 23 (RF tuned)</h2>
+  <div class="scroll"><table>
+    <tr><th>feature set</th><th class="num">AUC</th><th class="num">Acc</th><th class="num">F1</th><th class="num">Sens</th><th class="num">Spec</th><th class="num">CM (TN,FP,FN,TP)</th></tr>
+    <tr><td>11 fixed (เดิม)</td><td class="num">0.780</td><td class="num">0.721</td><td class="num">0.672</td><td class="num">0.652</td><td class="num">0.777</td><td class="num">609,175,217,405</td></tr>
+    <tr><td>11 + 12 ใหม่ = 23</td><td class="num">0.791</td><td class="num">0.724</td><td class="num">0.677</td><td class="num">0.659</td><td class="num">0.777</td><td class="num">609,175,213,409</td></tr>
+    <tr><td>Δ</td><td class="num" style="color:var(--ok)">+0.011</td><td class="num" style="color:var(--ok)">+0.003</td><td class="num" style="color:var(--ok)">+0.005</td><td class="num" style="color:var(--ok)">+0.007</td><td class="num">—</td><td class="num"></td></tr>
+  </table></div>
+
+  <h3>Feature importance (23-feature model) — ฟีเจอร์ใหม่ครองอันดับต้น</h3>
+  <div class="bar-row"><div style="color:var(--new)">tDiff_std ★ใหม่</div><div class="bwrap"><div class="bar new" style="width:100%"></div></div><div class="num">.095</div></div>
+  <div class="bar-row"><div style="color:var(--new)">tDiff_cv ★ใหม่</div><div class="bwrap"><div class="bar new" style="width:84%"></div></div><div class="num">.080</div></div>
+  <div class="bar-row"><div>mean_acc</div><div class="bwrap"><div class="bar" style="width:83%"></div></div><div class="num">.079</div></div>
+  <div class="bar-row"><div>tDiff_min</div><div class="bwrap"><div class="bar" style="width:69%"></div></div><div class="num">.066</div></div>
+  <div class="bar-row"><div style="color:var(--new)">tapPts_cv ★ใหม่</div><div class="bwrap"><div class="bar new" style="width:60%"></div></div><div class="num">.057</div></div>
+  <div class="bar-row"><div>tDiff_max</div><div class="bwrap"><div class="bar" style="width:52%"></div></div><div class="num">.049</div></div>
+  <div class="bar-row"><div>Score</div><div class="bwrap"><div class="bar" style="width:47%"></div></div><div class="num">.045</div></div>
+  <div class="bar-row"><div style="color:var(--new)">duration_s ★ใหม่</div><div class="bwrap"><div class="bar new" style="width:44%"></div></div><div class="num">.042</div></div>
+  <div class="bar-row"><div style="color:var(--new)">tDiff_slope ★ใหม่</div><div class="bwrap"><div class="bar new" style="width:41%"></div></div><div class="num">.039</div></div>
+  <div class="callout new"><strong>ความไม่สม่ำเสมอของจังหวะ (tDiff_std, tDiff_cv) คือสัญญาณ PD ที่แรงที่สุด</strong> — แซงทุกฟีเจอร์เดิม. ตรงกับอาการ bradykinesia/arrhythmia ทางคลินิก.</div>
+
+  <h2>3. Pruning — ตัดฟีเจอร์อ่อนทิ้ง</h2>
+  <p class="small">หลายฟีเจอร์ใหม่ (spread, path, tap_rate, fatigue) importance ต่ำ. ลองเก็บเฉพาะ top-K ตามลำดับความสำคัญ:</p>
+  <div class="scroll"><table>
+    <tr><th>#ฟีเจอร์</th><th class="num">AUC</th><th class="num">Acc</th><th class="num">F1</th><th class="num">Sens</th><th class="num">Spec</th></tr>
+    <tr><td>23 (ทั้งหมด)</td><td class="num">0.791</td><td class="num">0.724</td><td class="num">0.677</td><td class="num">0.659</td><td class="num">0.777</td></tr>
+    <tr><td>16</td><td class="num">0.793</td><td class="num">0.730</td><td class="num">0.683</td><td class="num">0.664</td><td class="num">0.783</td></tr>
+    <tr class="best"><td><strong>13 ★ ดีที่สุด</strong></td><td class="num">0.791</td><td class="num"><strong>0.730</strong></td><td class="num"><strong>0.686</strong></td><td class="num">0.664</td><td class="num">0.783</td></tr>
+    <tr><td>10</td><td class="num">0.791</td><td class="num">0.728</td><td class="num">0.685</td><td class="num">0.670</td><td class="num">0.776</td></tr>
+    <tr><td>8</td><td class="num">0.782</td><td class="num">0.723</td><td class="num">0.680</td><td class="num">0.669</td><td class="num">0.768</td></tr>
+    <tr><td>11 fixed (อ้างอิง)</td><td class="num">0.780</td><td class="num">0.721</td><td class="num">0.672</td><td class="num">0.652</td><td class="num">0.777</td></tr>
+  </table></div>
+  <div class="callout ok"><strong>Pruning ได้ผล:</strong> เหลือ <strong>13 ฟีเจอร์</strong> ให้ AUC 0.791 และ <u>Acc 0.730 / F1 0.686 สูงสุด</u> — ดีกว่าทั้ง 11-fixed และ 23-full ทั้งที่ใช้ฟีเจอร์น้อยกว่า (เร็วขึ้น, overfit น้อยลง, ตีความง่ายขึ้น). ลดต่ำกว่า 10 เริ่มเสีย AUC.</div>
+  <p class="small" style="color:var(--mut)">หมายเหตุ: ทุกตัวเลขในเอกสารนี้คำนวณด้วย RF <strong>400 ต้น</strong> เหมือนกันหมด (config เดียวกับ §2) เพื่อให้ confusion matrix และ metric สอดคล้องกันทุกหัวข้อ.</p>
+
+  <h3>13 ฟีเจอร์ที่เก็บ (best set)</h3>
+  <div>
+    <span class="pill new">tDiff_std</span><span class="pill new">tDiff_cv</span><span class="pill kept">mean_acc</span><span class="pill kept">tDiff_min</span><span class="pill new">tapPts_cv</span><span class="pill kept">tDiff_max</span><span class="pill kept">Score</span><span class="pill kept">Total Points</span><span class="pill new">duration_s</span><span class="pill new">tDiff_slope</span><span class="pill kept">Mean Tap Points</span><span class="pill new">acc_std</span><span class="pill kept">ppLR_stroke</span>
+  </div>
+  <p class="small" style="margin-top:6px">ตัดทิ้ง 10 ตัว: <span class="pill drop">Tap Count</span><span class="pill drop">Max Tap Points</span><span class="pill drop">Std Tap Points</span><span class="pill drop">tDiff_mean</span><span class="pill drop">tDiff_median</span><span class="pill drop">tap_rate</span><span class="pill drop">fatigue_ratio</span><span class="pill drop">spread_mean</span><span class="pill drop">spread_max</span><span class="pill drop">path_mean</span> (<span class="new">ม่วง</span> = ฟีเจอร์ใหม่ที่ถูกเก็บ 5 ตัว)</p>
+
+  <h2>4. Confusion matrix — เทียบ 3 ชุด</h2>
+  <div style="display:flex;gap:20px;flex-wrap:wrap">
+    <div>
+      <h3>11 fixed · AUC 0.780</h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">จริง CT</div><div class="cmcell tn"><div class="v">609</div>TN</div><div class="cmcell fp"><div class="v">175</div>FP</div>
+        <div class="cmhdr">จริง PD</div><div class="cmcell fn"><div class="v">217</div>FN</div><div class="cmcell tp"><div class="v">405</div>TP</div>
+      </div>
+    </div>
+    <div>
+      <h3>23 full · AUC 0.791</h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">จริง CT</div><div class="cmcell tn"><div class="v">609</div>TN</div><div class="cmcell fp"><div class="v">175</div>FP</div>
+        <div class="cmhdr">จริง PD</div><div class="cmcell fn"><div class="v">213</div>FN</div><div class="cmcell tp"><div class="v">409</div>TP</div>
+      </div>
+    </div>
+    <div>
+      <h3 style="color:var(--gold)">13 pruned ★ · AUC 0.791</h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">จริง CT</div><div class="cmcell tn"><div class="v">614</div>TN</div><div class="cmcell fp"><div class="v">170</div>FP</div>
+        <div class="cmhdr">จริง PD</div><div class="cmcell fn"><div class="v">209</div>FN</div><div class="cmcell tp"><div class="v">413</div>TP</div>
+      </div>
+    </div>
+  </div>
+  <p class="small" style="margin-top:8px">pruned-13 จับ PD ได้มากขึ้น (TP 405→413, FN 217→209) และเตือนผิด Control น้อยลง (FP 175→170) เมื่อเทียบ 11-fixed. (ทุกชุดที่ threshold 0.5, RF 400 ต้น)</p>
+
+  <h2>5. ROC — 11 vs 23</h2>
+  <svg viewBox="0 0 300 300" width="290" height="290">
+    <rect x="46" y="36" width="240" height="240" fill="#0c1116" stroke="#2b3744"/>
+    <line x1="46" y1="276" x2="286" y2="36" stroke="#3a4a5a" stroke-dasharray="4 4"/>
+    <polyline points="46.0,276.0 48.1,250.5 50.6,219.7 53.0,208.5 55.2,197.7 59.5,186.5 62.2,183.8 65.0,176.1 68.3,165.6 72.9,159.1 75.4,154.8 77.5,148.3 80.3,140.6 83.7,136.3 88.9,130.9 93.1,126.7 96.2,122.8 101.7,117.8 104.5,113.9 114.0,108.5 118.9,105.8 122.8,102.0 129.3,99.7 137.8,96.2 141.5,91.9 147.0,88.1 150.7,84.2 158.0,80.8 165.7,77.7 171.8,71.1 177.9,68.4 183.1,64.6 188.7,59.5 203.0,54.5 206.7,50.7 219.0,48.0 235.8,44.9 251.1,42.2 272.2,39.5 286.0,36.0"
+      fill="none" stroke="#6b7d8f" stroke-width="2" stroke-dasharray="3 3"/>
+    <polyline points="46.0,276.0 47.8,233.6 49.7,219.3 52.4,204.2 54.9,191.9 57.9,184.2 60.1,176.1 65.0,170.3 67.7,163.7 70.2,157.2 75.4,150.2 79.4,146.4 81.5,141.7 84.3,135.9 87.6,128.2 91.6,124.0 96.5,120.5 99.9,117.0 102.9,113.9 108.1,107.0 116.1,103.5 120.4,99.7 126.8,95.0 132.3,90.8 139.4,86.5 145.8,83.5 153.1,79.6 160.2,76.5 166.3,73.0 172.7,68.8 180.7,65.3 189.9,62.2 198.4,59.5 204.3,56.1 213.4,51.4 222.9,48.3 233.3,45.3 239.5,42.6 260.6,39.1 286.0,36.0"
+      fill="none" stroke="#c08cff" stroke-width="2.5"/>
+    <text x="166" y="296" fill="#9fb0c0" font-size="11" text-anchor="middle">False Positive Rate</text>
+    <text x="16" y="156" fill="#9fb0c0" font-size="11" text-anchor="middle" transform="rotate(-90 16 156)">True Positive Rate</text>
+    <text x="150" y="120" fill="#c08cff" font-size="11" font-weight="700">+new feats AUC 0.791</text>
+    <text x="150" y="136" fill="#6b7d8f" font-size="11">11 fixed AUC 0.780</text>
+  </svg>
+
+  <h2>6. ข้อสรุป</h2>
+  <div class="callout ok"><strong>ฟีเจอร์ใหม่ + pruning ได้ผลจริง:</strong> AUC 0.780 → <strong>0.791</strong>, Acc 0.721 → <strong>0.730</strong> โดยใช้ <strong>13 ฟีเจอร์</strong> (เลือกจาก 23). ตัวขับเคลื่อนหลักคือ <strong>ความไม่สม่ำเสมอของจังหวะ (tDiff_std, tDiff_cv)</strong> — ฟีเจอร์ใหม่ที่สำคัญที่สุด. ยืนยันบทเรียนเดิมว่าการลงทุนกับฟีเจอร์ให้ผลมากกว่าการเปลี่ยนอัลกอริทึม.</div>
+  <div class="callout"><strong>เส้นทางสะสมทั้งหมด:</strong> original 0.757 → fix features 0.772 → tune RF 0.780 → <strong>+new features (pruned 13) 0.791</strong>. ขั้นถัดไปที่ยังเหลือ: รวม repeat features (เคยช่วย), patient-level aggregation (#3), และ multimodal fusion (#6) ซึ่งคาดว่าจะดันได้มากกว่า dualtap เดี่ยว.</div>
+
+  <h2>7. วิธีคำนวณครบทั้ง 23 ฟีเจอร์ (พร้อมสถานะ keep / exclude)</h2>
+  <p class="small">
+    สัญลักษณ์: <code>taps</code> = รายการ stroke; stroke ที่ i มีจุด <code>ni</code> จุด แต่ละจุด <code>{x,y,ts}</code> (ts หน่วย ms);
+    <code>mx,my</code> = centroid ของ stroke; <code>r</code> = รัศมีวงกลม (=56); <code>dist</code> = ระยะจุดถึง "เป้าที่ใกล้กว่า" (กฎ midpoint);
+    <code>tsᵢ</code> = ค่าเฉลี่ย ts ของ stroke i; <code>tDiff</code> = ผลต่าง <code>tsᵢ − tsᵢ₋₁</code> (ลำดับช่วงเวลาแตะ).
+    <span style="color:var(--ok)">■ เขียว = เก็บ–ฟีเจอร์เดิม (7)</span> &nbsp; <span style="color:var(--new)">■ ม่วง = เก็บ–ฟีเจอร์ใหม่ (6)</span> &nbsp; <span style="color:var(--mut)">■ เทา = ตัดออก (10)</span> · เรียงตาม importance.
+  </p>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>ฟีเจอร์</th><th>วิธีคำนวณ</th><th class="num">imp.</th><th>สถานะ</th></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>1</td><td><code>tDiff_std</code></td><td>ส่วนเบี่ยงเบนมาตรฐานของ tDiff = <code>std(tDiff)</code> — ความไม่สม่ำเสมอของจังหวะ</td><td class="num">.095</td><td style="color:var(--new)">✔ keep · ใหม่</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>2</td><td><code>tDiff_cv</code></td><td><code>std(tDiff) / mean(tDiff)</code> — ความแปรปรวนจังหวะแบบ normalize</td><td class="num">.080</td><td style="color:var(--new)">✔ keep · ใหม่</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>3</td><td><code>mean_acc</code></td><td>เฉลี่ยทุกจุดของ <code>dist / r</code> — ระยะถึงเป้าเฉลี่ย (ความแม่นยำ)</td><td class="num">.079</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>4</td><td><code>tDiff_min</code></td><td><code>min(tDiff)</code> — ช่วงแตะที่เร็วที่สุด</td><td class="num">.066</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>5</td><td><code>tapPts_cv</code></td><td><code>std(ni) / mean(ni)</code> — ความไม่คงที่ของจำนวนจุดต่อ stroke</td><td class="num">.057</td><td style="color:var(--new)">✔ keep · ใหม่</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>6</td><td><code>tDiff_max</code></td><td><code>max(tDiff)</code> — ช่วงหยุด/ลังเลที่นานสุด</td><td class="num">.049</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>7</td><td><code>Score</code></td><td><code>data['score']</code> — คะแนนในแอป (ส่งมากับไฟล์)</td><td class="num">.045</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>8</td><td><code>Total Points</code></td><td><code>Σ ni</code> — จำนวนจุดสัมผัสรวมทุก stroke</td><td class="num">.044</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>9</td><td><code>duration_s</code></td><td><code>(max(ts) − min(ts)) / 1000</code> — ระยะเวลาทำทั้งงาน (วินาที)</td><td class="num">.042</td><td style="color:var(--new)">✔ keep · ใหม่</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>10</td><td><code>tDiff_slope</code></td><td>ความชันเส้นตรง fit ของ <code>tDiff</code> เทียบลำดับ — แตะช้าลงเรื่อยๆ (ms/แตะ)</td><td class="num">.039</td><td style="color:var(--new)">✔ keep · ใหม่</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>11</td><td><code>Mean Tap Points</code></td><td><code>mean(ni)</code> — จำนวนจุดเฉลี่ยต่อ stroke</td><td class="num">.038</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>12</td><td><code>acc_std</code></td><td><code>std</code> ทุกจุดของ <code>dist / r</code> — ความสม่ำเสมอของความแม่นยำ</td><td class="num">.037</td><td style="color:var(--new)">✔ keep · ใหม่</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>13</td><td><code>ppLR_stroke</code></td><td><code>min(nL,nR) / max(nL,nR)</code> นับข้างต่อ stroke ด้วย centroid — สมดุล ซ้าย/ขวา</td><td class="num">.037</td><td style="color:var(--ok)">✔ keep · เดิม</td></tr>
+    <tr style="opacity:.55"><td>14</td><td><code>fatigue_ratio</code></td><td><code>mean(tDiff ครึ่งหลัง) / mean(tDiff ครึ่งแรก)</code> — อาการล้า</td><td class="num">.036</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>15</td><td><code>tDiff_median</code></td><td><code>median(tDiff)</code> — ช่วงแตะค่ากลาง (ซ้ำซ้อนกับ tDiff_mean/min)</td><td class="num">.033</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>16</td><td><code>Std Tap Points</code></td><td><code>std(ni)</code> — กระจายจำนวนจุด/stroke (ซ้ำกับ tapPts_cv)</td><td class="num">.032</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>17</td><td><code>tDiff_mean</code></td><td><code>mean(tDiff)</code> — ช่วงแตะเฉลี่ย (ซ้ำกับ duration/rate)</td><td class="num">.032</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>18</td><td><code>path_mean</code></td><td>เฉลี่ยต่อ stroke ของ <code>Σ ระยะจุดต่อเนื่อง</code> — ความยาวเส้นลาก</td><td class="num">.030</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>19</td><td><code>tap_rate</code></td><td><code>nStrokes / duration_s</code> — อัตราแตะ (ซ้ำกับ duration)</td><td class="num">.029</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>20</td><td><code>spread_mean</code></td><td>เฉลี่ยต่อ stroke ของ <code>mean(ระยะจุดถึง centroid)</code> — tremor</td><td class="num">.028</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>21</td><td><code>Max Tap Points</code></td><td><code>max(ni)</code> — จุดมากสุดใน 1 stroke</td><td class="num">.026</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>22</td><td><code>spread_max</code></td><td><code>max</code> ต่อ stroke ของ spread — tremor สูงสุด</td><td class="num">.023</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>23</td><td><code>Tap Count</code></td><td><code>len(taps)</code> — จำนวน stroke (ซ้ำกับ Total Points/duration)</td><td class="num">.022</td><td style="color:var(--mut)">✘ exclude</td></tr>
+  </table></div>
+  <p class="small">เกณฑ์ keep/exclude: เก็บ 13 อันดับแรกตาม importance (จุดที่ AUC/Acc/F1 สูงสุดในตาราง pruning §3). ที่ตัดส่วนใหญ่เป็นตัว "ซ้ำซ้อน" (เช่น tap_rate↔duration, Std/Max Tap Points↔tapPts_cv, tDiff_median↔tDiff_min/max) หรือ importance ต่ำ (spread/path) — ตัดแล้วผลไม่ลด.</p>
+
+  <h2>8. วิเคราะห์ฟีเจอร์ด้วย SHAP (RF tuned, 13 ฟีเจอร์)</h2>
+  <p class="small">SHAP (TreeExplainer) บอกได้ทั้ง <strong>ขนาด</strong> และ <strong>ทิศทาง</strong> ของอิทธิพลแต่ละฟีเจอร์ระดับราย sample — ต่างจาก Gini importance ที่บอกแค่ขนาด.</p>
+
+  <h3>8.1 SHAP global importance (mean |SHAP|)</h3>
+  <div style="margin:10px 0"><img src="shap_bar.png" alt="SHAP bar" style="max-width:100%;border:1px solid var(--line);border-radius:10px"></div>
+
+  <h3>8.2 SHAP summary / beeswarm (ทิศทาง)</h3>
+  <div style="margin:10px 0"><img src="shap_beeswarm.png" alt="SHAP beeswarm" style="max-width:100%;border:1px solid var(--line);border-radius:10px"></div>
+  <p class="small">แต่ละจุด = 1 ไฟล์ · แกน X = SHAP (ขวา = ดันไป PD) · สีแดง = ค่าฟีเจอร์สูง, น้ำเงิน = ต่ำ.</p>
+
+  <h3>8.3 ตารางสรุป ขนาด + ทิศทาง</h3>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>ฟีเจอร์</th><th class="num">mean|SHAP|</th><th class="num">corr(ค่า,SHAP)</th><th>ค่าสูงดันไป</th><th>ตีความ</th></tr>
+    <tr><td>1</td><td style="color:var(--new)"><code>tDiff_std</code></td><td class="num">.066</td><td class="num">+0.52</td><td style="color:var(--pd);font-weight:700">PD</td><td>จังหวะแปรปรวนมาก → PD</td></tr>
+    <tr><td>2</td><td><code>mean_acc</code></td><td class="num">.060</td><td class="num">+0.62</td><td style="color:var(--pd);font-weight:700">PD</td><td>แตะห่างเป้า (แม่นยำต่ำ) → PD</td></tr>
+    <tr><td>3</td><td style="color:var(--new)"><code>tDiff_cv</code></td><td class="num">.045</td><td class="num">+0.75</td><td style="color:var(--pd);font-weight:700">PD</td><td>จังหวะไม่สม่ำเสมอ → PD</td></tr>
+    <tr><td>4</td><td><code>tDiff_min</code></td><td class="num">.037</td><td class="num">−0.41</td><td style="color:var(--ct);font-weight:700">Control</td><td>มีช่วงแตะเร็วชัด → Control</td></tr>
+    <tr><td>5</td><td><code>Total Points</code></td><td class="num">.034</td><td class="num">−0.83</td><td style="color:var(--ct);font-weight:700">Control</td><td>จุดรวมมาก → Control*</td></tr>
+    <tr><td>6</td><td><code>Score</code></td><td class="num">.034</td><td class="num">−0.86</td><td style="color:var(--ct);font-weight:700">Control</td><td>คะแนนสูง → Control</td></tr>
+    <tr><td>7</td><td style="color:var(--new)"><code>tapPts_cv</code></td><td class="num">.034</td><td class="num">+0.78</td><td style="color:var(--pd);font-weight:700">PD</td><td>ขนาดแตะไม่คงที่ → PD</td></tr>
+    <tr><td>8</td><td><code>Mean Tap Points</code></td><td class="num">.030</td><td class="num">−0.48</td><td style="color:var(--ct);font-weight:700">Control</td><td>จุดต่อแตะมาก → Control*</td></tr>
+    <tr><td>9</td><td style="color:var(--new)"><code>tDiff_slope</code></td><td class="num">.022</td><td class="num">+0.09</td><td style="color:var(--pd);font-weight:700">PD</td><td>แตะช้าลงเรื่อยๆ → PD (อ่อน)</td></tr>
+    <tr><td>10</td><td style="color:var(--new)"><code>duration_s</code></td><td class="num">.020</td><td class="num">−0.62</td><td style="color:var(--ct);font-weight:700">Control</td><td>ใช้เวลานาน → Control*</td></tr>
+    <tr><td>11</td><td><code>tDiff_max</code></td><td class="num">.019</td><td class="num">+0.61</td><td style="color:var(--pd);font-weight:700">PD</td><td>มีช่วงหยุด/ลังเลนาน → PD</td></tr>
+    <tr><td>12</td><td><code>ppLR_stroke</code></td><td class="num">.015</td><td class="num">−0.78</td><td style="color:var(--ct);font-weight:700">Control</td><td>สลับซ้าย-ขวาสมดุล → Control</td></tr>
+    <tr><td>13</td><td style="color:var(--new)"><code>acc_std</code></td><td class="num">.010</td><td class="num">+0.13</td><td style="color:var(--pd);font-weight:700">PD</td><td>ความแม่นยำไม่สม่ำเสมอ → PD (อ่อน)</td></tr>
+  </table></div>
+  <p class="small">* <code>Total Points</code>/<code>Mean Tap Points</code>/<code>duration_s</code> ทิศทาง SHAP กลับทางกับค่าเฉลี่ยดิบ — เพราะ SHAP เป็นผล <em>เงื่อนไขร่วม</em> (conditional/interaction): เมื่อโมเดลรู้จังหวะแปรปรวนแล้ว ตัวจำนวนจุดทำหน้าที่ปรับแก้ทางตรงข้าม.</p>
+
+  <div class="callout new"><strong>SHAP ยืนยัน:</strong> ความแปรปรวนของจังหวะ (<code>tDiff_std</code>, <code>tDiff_cv</code>) คือสัญญาณ PD ที่แรงและชัดที่สุดทั้งขนาดและทิศทาง — ตรงกับ bradykinesia/arrhythmia. ลายเซ็น PD = จังหวะแปรปรวน + แตะไม่แม่น/ไม่สม่ำเสมอ; ลายเซ็น Control = คะแนนสูง + สลับซ้าย-ขวาสมดุล + มีจังหวะเร็วชัด. (4 ใน 6 ฟีเจอร์ที่ดันไป PD เป็นฟีเจอร์ใหม่)</div>
+
+  <h2>9. หาจุดทำงานที่ Recall สูง — สำหรับคัดกรอง PD</h2>
+  <p class="small">
+    งาน<strong>คัดกรอง</strong> ต้องการ <strong>Sensitivity (Recall ของ PD) สูง</strong> — พลาดผู้ป่วยให้น้อยที่สุด (False Negative ต่ำ) ยอมแลกกับ False Positive ที่มากขึ้น (ส่งต่อไปตรวจยืนยัน).
+    ตัวชี้วัดสำคัญคือ <strong>NPV</strong> (ถ้าผลว่า "ปกติ" จะปกติจริงแค่ไหน). ใช้โมเดล RF tuned + 13 ฟีเจอร์ · OOF (group CV) · AUC 0.791 · PD 622 / Control 784 ราย.
+  </p>
+  <div class="scroll"><table>
+    <tr><th>threshold</th><th class="num">Sens (Recall PD)</th><th class="num">Spec</th><th class="num">PPV</th><th class="num">NPV</th><th class="num">F1</th><th class="num">Acc</th><th class="num">พลาด PD (FN)</th><th class="num">False alarm (FP)</th></tr>
+    <tr><td>0.50 (default)</td><td class="num">0.664</td><td class="num">0.783</td><td class="num">0.708</td><td class="num">0.746</td><td class="num">0.685</td><td class="num">0.730</td><td class="num">209</td><td class="num">170</td></tr>
+    <tr><td>0.45</td><td class="num">0.714</td><td class="num">0.716</td><td class="num">0.666</td><td class="num">0.759</td><td class="num">0.689</td><td class="num">0.715</td><td class="num">178</td><td class="num">223</td></tr>
+    <tr><td>0.40</td><td class="num">0.765</td><td class="num">0.642</td><td class="num">0.629</td><td class="num">0.775</td><td class="num">0.690</td><td class="num">0.696</td><td class="num">146</td><td class="num">281</td></tr>
+    <tr><td>0.35</td><td class="num">0.807</td><td class="num">0.554</td><td class="num">0.589</td><td class="num">0.783</td><td class="num">0.681</td><td class="num">0.666</td><td class="num">120</td><td class="num">350</td></tr>
+    <tr style="background:rgba(255,213,107,.10)"><td>0.315 · เป้า Sens≥0.85</td><td class="num">0.857</td><td class="num">0.482</td><td class="num">0.568</td><td class="num">0.809</td><td class="num">0.683</td><td class="num">0.652</td><td class="num">89</td><td class="num">—</td></tr>
+    <tr class="best"><td><strong>0.275 · เป้า Sens≥0.90 ★ แนะนำ</strong></td><td class="num"><strong>0.900</strong></td><td class="num">0.393</td><td class="num">0.541</td><td class="num"><strong>0.832</strong></td><td class="num">0.675</td><td class="num">0.632</td><td class="num"><strong>62</strong></td><td class="num">—</td></tr>
+    <tr style="background:rgba(255,213,107,.10)"><td>0.215 · เป้า Sens≥0.95</td><td class="num">0.950</td><td class="num">0.269</td><td class="num">0.508</td><td class="num">0.872</td><td class="num">0.662</td><td class="num">0.598</td><td class="num">31</td><td class="num">—</td></tr>
+    <tr><td>0.15</td><td class="num">0.981</td><td class="num">0.124</td><td class="num">0.470</td><td class="num">0.890</td><td class="num">0.636</td><td class="num">0.503</td><td class="num">12</td><td class="num">687</td></tr>
+    <tr style="opacity:.7"><td>Youden (สมดุล) 0.507</td><td class="num">0.659</td><td class="num">0.790</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">212</td><td class="num">—</td></tr>
+  </table></div>
+
+  <div class="callout ok"><strong>แนะนำสำหรับคัดกรอง: threshold ≈ 0.275 (เป้า Sensitivity 0.90).</strong>
+    จับ PD ได้ 90% — พลาดเหลือ <strong>62 จาก 622 ราย</strong> (เทียบ default 0.5 ที่พลาด 209 ราย), NPV 0.83 (ถ้าผลว่าปกติ มั่นใจได้ ~83%).
+    ข้อแลก: Specificity 0.39 → มี false positive เยอะ แต่ในงานคัดกรองแบบ first-line ถือว่ายอมรับได้ เพราะผู้ที่ผลบวกจะถูกส่งไปตรวจยืนยันต่อ.
+  </div>
+  <div class="callout"><strong>เลือกตามความเข้มงวด:</strong> ต้องการพลาดน้อยที่สุด → ใช้ thr 0.215 (Sens 0.95, พลาด 31 ราย) แต่ false alarm จะมากขึ้นอีก;
+    ต้องการสมดุล (วินิจฉัยทั่วไป ไม่ใช่คัดกรองล้วน) → ใช้ default 0.5 หรือ Youden. <br>
+    หมายเหตุ: ค่าเหล่านี้เป็น dualtap งานเดียว — งานคัดกรองจริงควรรวมหลาย task (multimodal) เพื่อดัน Specificity ที่จุด Sensitivity สูงให้ดีขึ้น.
+  </div>
+
+  <h3>Confusion matrix — เทียบ 3 ค่า threshold (PD 622 / Control 784)</h3>
+  <div style="display:flex;gap:20px;flex-wrap:wrap">
+    <div>
+      <h3>thr 0.50 (default) <small style="color:var(--mut);font-weight:400;display:block;font-size:.72rem">Sens 0.664 · Spec 0.783</small></h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">จริง CT</div><div class="cmcell tn"><div class="v">614</div>TN</div><div class="cmcell fp"><div class="v">170</div>FP</div>
+        <div class="cmhdr">จริง PD</div><div class="cmcell fn"><div class="v">209</div>FN</div><div class="cmcell tp"><div class="v">413</div>TP</div>
+      </div>
+      <p class="small" style="margin:6px 0 0">พลาด PD 209 ราย</p>
+    </div>
+    <div>
+      <h3 style="color:var(--gold)">thr 0.275 ★ คัดกรอง <small style="color:var(--mut);font-weight:400;display:block;font-size:.72rem">Sens 0.90 · Spec 0.393</small></h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">จริง CT</div><div class="cmcell tn"><div class="v">308</div>TN</div><div class="cmcell fp"><div class="v">476</div>FP</div>
+        <div class="cmhdr">จริง PD</div><div class="cmcell fn"><div class="v">62</div>FN</div><div class="cmcell tp"><div class="v">560</div>TP</div>
+      </div>
+      <p class="small" style="margin:6px 0 0">พลาด PD <span style="color:var(--ok)">เหลือ 62</span> · ส่งตรวจต่อเพิ่ม</p>
+    </div>
+    <div>
+      <h3>thr 0.215 (เข้ม) <small style="color:var(--mut);font-weight:400;display:block;font-size:.72rem">Sens 0.95 · Spec 0.269</small></h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">จริง CT</div><div class="cmcell tn"><div class="v">211</div>TN</div><div class="cmcell fp"><div class="v">573</div>FP</div>
+        <div class="cmhdr">จริง PD</div><div class="cmcell fn"><div class="v">31</div>FN</div><div class="cmcell tp"><div class="v">591</div>TP</div>
+      </div>
+      <p class="small" style="margin:6px 0 0">พลาด PD <span style="color:var(--ok)">เหลือ 31</span> · false alarm สูง</p>
+    </div>
+  </div>
+  <p class="small" style="margin-top:8px">เห็นชัดว่า ลด threshold → ช่อง <span style="color:var(--pd)">FN (พลาด PD)</span> เล็กลงเรื่อยๆ (209 → 62 → 31) แต่ <span style="color:var(--pd)">FP (เตือนผิด Control)</span> โตขึ้น (170 → 476 → 573). เลือกตามว่ายอม "พลาดผู้ป่วย" ได้แค่ไหน เทียบกับภาระตรวจยืนยันที่เพิ่มขึ้น.</p>
+
+  <h2>10. ภาคผนวก — วิธีคิด + วิธีคำนวณละเอียด ครบ 23 ฟีเจอร์</h2>
+
+  <h3>10.0 ตัวแปรกลางที่ใช้ร่วม (intermediate variables)</h3>
+  <p class="small">ทุกฟีเจอร์สร้างจากตัวแปรเหล่านี้ (สกัดจาก <code>recording.taps</code> + <code>circleL/R</code>):</p>
+  <div class="scroll"><table>
+    <tr><th>สัญลักษณ์</th><th>นิยาม</th></tr>
+    <tr><td><code>N</code></td><td>จำนวน stroke (การแตะ) = <code>len(taps)</code></td></tr>
+    <tr><td><code>strokeᵢ</code></td><td>การแตะครั้งที่ i มีจุดสัมผัสหลายจุด แต่ละจุด = <code>{x, y, ts}</code> (ts = epoch ms)</td></tr>
+    <tr><td><code>nᵢ</code></td><td>จำนวนจุดใน strokeᵢ = <code>len(strokeᵢ.data)</code></td></tr>
+    <tr><td><code>(mxᵢ, myᵢ)</code></td><td>centroid ของ strokeᵢ = <code>(mean(x), mean(y))</code> ของจุดในแตะนั้น</td></tr>
+    <tr><td><code>tsᵢ</code></td><td>เวลากลางของ strokeᵢ = <code>mean(ts ของทุกจุดใน strokeᵢ)</code></td></tr>
+    <tr><td><code>tDiff</code></td><td>ลิสต์ช่วงเวลาระหว่างแตะที่ติดกัน = <code>[ts₂−ts₁, ts₃−ts₂, …]</code> (มี N−1 ค่า, หน่วย ms)</td></tr>
+    <tr><td><code>r</code></td><td>รัศมีวงกลมเป้า = <code>circleL.r</code> (= 56 ในชุดนี้)</td></tr>
+    <tr><td><code>side(จุด)</code></td><td>กฎ midpoint รายจุด: ถ้า <code>(x−cLx) ≥ (cRx−x)</code> → ฝั่ง <b>ขวา</b> ไม่งั้น <b>ซ้าย</b></td></tr>
+    <tr><td><code>dist(จุด)</code></td><td>ระยะจากจุดถึง "ศูนย์กลางวงกลมฝั่งที่ถูกเลือก" = <code>√((x−cx)²+(y−cy)²)</code></td></tr>
+    <tr><td><code>nL, nR</code></td><td>จำนวน stroke ที่ centroid ใกล้วงซ้าย / วงขวา (นับ "ต่อ stroke")</td></tr>
+  </table></div>
+
+  <h3>10.1 กลุ่ม A — จำนวน/ขนาดการแตะ (จาก nᵢ)</h3>
+  <div class="scroll"><table>
+    <tr><th>ฟีเจอร์</th><th>สูตร</th><th>วิธีคิด (ทำไมแยก PD ได้)</th></tr>
+    <tr><td><code>Tap Count</code></td><td><code>N</code></td><td>จำนวนแตะทั้งหมดในเวลาที่กำหนด — น้อย = แตะช้า (bradykinesia)</td></tr>
+    <tr><td><code>Total Points</code></td><td><code>Σ nᵢ</code></td><td>จุดสัมผัสรวม — มากผิดปกติ = นิ้วลาก/สั่นทำให้ sample เยอะ</td></tr>
+    <tr><td><code>Mean Tap Points</code></td><td><code>mean(nᵢ)</code></td><td>จำนวนจุดเฉลี่ยต่อ 1 แตะ — แตะคมๆ ของคนปกติได้จุดน้อย; PD ที่กดค้าง/สั่นจะมีจุดต่อแตะมากกว่า (แตะ 1 ครั้งกินเวลานานขึ้น)</td></tr>
+    <tr><td><code>Max Tap Points</code></td><td><code>max(nᵢ)</code></td><td>แตะที่ "ยาว/สั่น" ที่สุด — จับ event เลวร้ายสุด</td></tr>
+    <tr><td><code>Std Tap Points</code></td><td><code>std(nᵢ)</code></td><td>การกระจายของจำนวนจุดต่อแตะ (สเกลดิบ)</td></tr>
+    <tr><td><code>tapPts_cv</code></td><td><code>std(nᵢ) / mean(nᵢ)</code></td><td>ความไม่คงที่ของ "ขนาดแตะ" แบบ normalize ด้วยค่าเฉลี่ย — ตัด effect ของจำนวนจุดเฉลี่ยออก เหลือแต่ "ความไม่สม่ำเสมอเชิงสัมพัทธ์". PD แตะบ้างสั้นบ้างยาวไม่คงเส้นคงวา → ค่าสูง. (ดีกว่า Std Tap Points ที่ยังผูกกับสเกล)</td></tr>
+  </table></div>
+
+  <h3>10.2 กลุ่ม B — ความแม่นยำเชิงพื้นที่ (จาก dist, r)</h3>
+  <div class="scroll"><table>
+    <tr><th>ฟีเจอร์</th><th>สูตร</th><th>วิธีคิด</th></tr>
+    <tr><td><code>mean_acc</code></td><td><code>mean( dist / r )</code> ทุกจุด</td><td>ระยะถึงเป้าเฉลี่ย หารด้วยรัศมี (normalize ขนาดวงกลม) — ค่า &lt;1 = แตะในวง, ยิ่งสูง = ยิ่งห่างเป้า (แม่นยำต่ำ) → PD</td></tr>
+    <tr><td><code>acc_std</code></td><td><code>std( dist / r )</code> ทุกจุด</td><td>ความ "ไม่สม่ำเสมอ" ของความแม่นยำ — คนปกติแตะตรงเป้าสม่ำเสมอ (std ต่ำ); PD แตะเดี๋ยวตรงเดี๋ยวพลาด ระยะกระจายมาก (std สูง). วัดคนละมิติกับ mean_acc: ตัวหนึ่งคือ "แม่นเฉลี่ย" อีกตัวคือ "แม่นสม่ำเสมอแค่ไหน"</td></tr>
+  </table></div>
+
+  <h3>10.3 กลุ่ม C — สมดุลซ้าย-ขวา (จาก nL, nR)</h3>
+  <div class="scroll"><table>
+    <tr><th>ฟีเจอร์</th><th>สูตร</th><th>วิธีคิด</th></tr>
+    <tr><td><code>ppLR_stroke</code></td><td><code>min(nL, nR) / max(nL, nR)</code><br>(ถ้าตัวส่วน 0 → 0)</td><td>นับ "ข้าง" ของแต่ละแตะจาก centroid (1 แตะ = 1 โหวต ซ้ายหรือขวา) แล้วเทียบสัดส่วนข้างน้อย/ข้างมาก. ค่า = 1 คือแตะซ้าย-ขวาเท่ากัน (สมดุลดี = Control); เข้าใกล้ 0 คือเอียงไปข้างเดียว (PD ที่ใช้มือ/ข้างไม่ถนัด หรือแตะพลาดฝั่ง). <b>นับต่อ stroke</b> เพื่อตัด confound จากจำนวนจุดต่อแตะ (ต่างจากเวอร์ชันเดิมที่นับต่อจุด แล้วโดน tremor ที่จุดเยอะข้างเดียวรบกวน)</td></tr>
+  </table></div>
+
+  <h3>10.4 กลุ่ม D — จังหวะ/เวลา (จาก ts, tDiff)</h3>
+  <div class="scroll"><table>
+    <tr><th>ฟีเจอร์</th><th>สูตร</th><th>วิธีคิด</th></tr>
+    <tr><td><code>tDiff_mean</code></td><td><code>mean(tDiff)</code></td><td>ช่วงเวลาเฉลี่ยระหว่างแตะ — มาก = แตะช้า</td></tr>
+    <tr><td><code>tDiff_median</code></td><td><code>median(tDiff)</code></td><td>ช่วงเวลาค่ากลาง (ทนต่อ outlier กว่า mean)</td></tr>
+    <tr><td><code>tDiff_min</code></td><td><code>min(tDiff)</code></td><td>จังหวะที่เร็วที่สุดทำได้ — Control มักมีช่วงเร็วชัด</td></tr>
+    <tr><td><code>tDiff_max</code></td><td><code>max(tDiff)</code></td><td>ช่วงหยุด/ลังเลที่นานที่สุด (freezing/hesitation) → PD</td></tr>
+    <tr><td><code>tDiff_std</code></td><td><code>std(tDiff)</code></td><td><b>ความไม่สม่ำเสมอของจังหวะ</b> — เคาะไม่เป็นจังหวะคงที่ = arrhythmia ของ PD (ฟีเจอร์ที่ SHAP จัดอันดับ 1)</td></tr>
+    <tr><td><code>tDiff_cv</code></td><td><code>std(tDiff) / mean(tDiff)</code></td><td>ความแปรปรวนจังหวะแบบ normalize — แยก "จังหวะรวน" ออกจาก "แค่ช้า" (คนช้าแต่สม่ำเสมอ cv ต่ำ; PD รวน cv สูง)</td></tr>
+    <tr><td><code>tDiff_slope</code></td><td>ความชัน <code>a</code> จาก fit เส้นตรง <code>tDiff ≈ a·(ลำดับ) + b</code> (least-squares บนดัชนี 0,1,2,…)</td><td>แนวโน้มว่าช่วงเวลาระหว่างแตะ "เพิ่มขึ้นเรื่อยๆ" ไหมตลอดการทดสอบ. <code>a &gt; 0</code> = แตะช้าลงเรื่อยๆ (progressive slowing / decrement — ลักษณะเด่นของ PD bradykinesia เวลาเคาะซ้ำๆ); <code>a ≈ 0</code> = คงที่. ต้องมี ≥3 ค่าถึงคำนวณ ไม่งั้น = 0</td></tr>
+    <tr><td><code>duration_s</code></td><td><code>(max(ts) − min(ts)) / 1000</code></td><td>เวลารวมที่ใช้ทำงานทั้งหมด (วินาที)</td></tr>
+    <tr><td><code>tap_rate</code></td><td><code>N / duration_s</code></td><td>อัตราการแตะ (แตะ/วินาที) — ต่ำ = bradykinesia</td></tr>
+    <tr><td><code>fatigue_ratio</code></td><td><code>mean(tDiff ครึ่งหลัง) / mean(tDiff ครึ่งแรก)</code></td><td>เทียบจังหวะครึ่งหลังกับครึ่งแรก — &gt;1 = ช้าลงเมื่อเวลาผ่านไป (อาการล้า). ต้องมี tDiff ≥4 ค่า</td></tr>
+  </table></div>
+
+  <h3>10.5 กลุ่ม E — อาการสั่น/เส้นทางในแต่ละแตะ (geometry ภายใน stroke)</h3>
+  <div class="scroll"><table>
+    <tr><th>ฟีเจอร์</th><th>สูตร</th><th>วิธีคิด</th></tr>
+    <tr><td><code>spread_mean</code></td><td>เฉลี่ยทุก stroke ของ <code>mean( √((x−mx)²+(y−my)²) )</code> (ระยะจุดถึง centroid ของแตะนั้น)</td><td>"ความฟุ้ง" ของจุดในแต่ละแตะ — แตะคมจุดเกาะกลุ่ม (spread ต่ำ); สั่น/ลากทำให้จุดกระจาย (spread สูง) → tremor</td></tr>
+    <tr><td><code>spread_max</code></td><td><code>max</code> ของ spread ข้างต้นทุก stroke</td><td>แตะที่สั่น/ฟุ้งที่สุด</td></tr>
+    <tr><td><code>path_mean</code></td><td>เฉลี่ยทุก stroke ของ <code>Σ √((xⱼ−xⱼ₋₁)²+(yⱼ−yⱼ₋₁)²)</code> (ผลรวมระยะจุดต่อเนื่องในแตะ)</td><td>ความยาวเส้นที่นิ้วลากระหว่าง 1 แตะ — แตะจุดเดียวสั้น; ลาก/สั่นทำให้เส้นยาว</td></tr>
+  </table></div>
+
+  <h3>10.6 กลุ่ม F — คะแนนแอป</h3>
+  <div class="scroll"><table>
+    <tr><th>ฟีเจอร์</th><th>สูตร</th><th>วิธีคิด</th></tr>
+    <tr><td><code>Score</code></td><td><code>data['score']</code></td><td>คะแนนที่แอปคำนวณให้ (ส่งมากับไฟล์) — สูง = ทำได้ดี = แนวโน้ม Control</td></tr>
+  </table></div>
+
+  <div class="callout"><strong>สรุปการ map 23 ฟีเจอร์:</strong> กลุ่ม A (6) จาก <code>nᵢ</code> · B (2) จาก <code>dist</code> · C (1) จาก <code>nL/nR</code> · D (10) จาก <code>ts/tDiff</code> · E (3) จาก geometry ในแตะ · F (1) จาก score = <strong>23 ฟีเจอร์</strong>. (หมายเหตุ: เวอร์ชันดั้งเดิม <code>ppInsideToAll</code>/<code>ppLeftToRight</code> ถูกแทนด้วย <code>mean_acc</code>/<code>ppLR_stroke</code> ที่ปรับปรุงแล้ว — ดู §1)</div>
+
+  <p class="foot">RF tuned (400/d10/leaf4/maxsamp0.8/balanced — ทุกหัวข้อใช้ 400 ต้น) · StratifiedGroupKFold(10, seed=42) · group=ผู้ป่วย · pooled OOF · SHAP TreeExplainer · threshold analysis · DualTapReview</p>
+</div>
+</body>
+</html>
