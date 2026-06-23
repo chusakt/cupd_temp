@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>DualTap — reconstruct 2nd circle?</title>
+<style>
+ :root{--bg:#0f1419;--panel:#1a2230;--ink:#e8eef6;--mut:#8b9bb0;--line:#2b3648;--ev:#fb923c;--od:#2dd4bf;--cir:#94a3b8;}
+ *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,Segoe UI,Roboto,"Noto Sans Thai",sans-serif}
+ .wrap{max-width:1100px;margin:0 auto;padding:22px}h1{font-size:20px;margin:0 0 2px}.sub{color:var(--mut);font-size:13px;margin-bottom:14px}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+ .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+ .ct{font-size:13px;margin-bottom:6px}.ct b{color:var(--ink)} .good{color:#22c55e}.bad{color:#ef4444}
+ canvas{width:100%;display:block;background:#0c1118;border-radius:8px}
+ .cap{color:var(--mut);font-size:12px;margin-top:6px}
+ .leg{display:flex;gap:14px;margin:8px 0 16px;font-size:12.5px;color:var(--mut)}
+ .sw{width:11px;height:11px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
+ .concl{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:16px;font-size:13.5px}
+ .concl b{color:var(--ink)} .concl li{margin:4px 0;color:var(--mut)}
+ .langbar{position:fixed;top:12px;right:14px;display:flex;gap:4px;z-index:20}
+ .langbar button{background:#0f1722;color:var(--mut);border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer}
+ .langbar button.on{background:#2dd4bf;color:#06302b;border-color:#2dd4bf;font-weight:600}
+</style></head><body>
+<div class="langbar"><button id="bTH">ไทย</button><button id="bEN">EN</button></div>
+<div class="wrap">
+<h1 id="h1"></h1>
+<div class="sub" id="sub"></div>
+<div class="leg" id="leg"></div>
+<div class="grid" id="grid"></div>
+<div class="concl" id="concl"></div>
+</div>
+<script>
+const D={"good": [{"id": "1767447863861", "ver": "2.2.1", "cL": {"r": 56, "x": 36, "y": 556.4444444444445}, "cR": {"r": 56, "x": 172, "y": 556.4444444444445}, "P": [[223.6, 633.3], [57.8, 611.1], [198.2, 620.9], [63.6, 609.3], [196, 635.1], [70.2, 596], [219.6, 624.4], [76.9, 601.8], [218.7, 634.7], [73.3, 612.9], [227.1, 625.3], [68.4, 610.2], [230.7, 626.2], [61.3, 615.1], [232, 634.7], [86.7, 622.7], [216.9, 626.7], [70.2, 618.2], [231.6, 624.4], [71.6, 605.8], [216, 617.8], [75.1, 601.3], [223.6, 617.3], [64, 601.3], [230.7, 630.7], [76.4, 619.1], [232.9, 625.3], [82.2, 616.9], [225.3, 616.4], [74.7, 607.6], [236, 620.9], [73.8, 611.1], [226.2, 611.1], [78.2, 609.3], [240.4, 620.4], [82.2, 609.8], [237.8, 609.8], [70.7, 592], [221.8, 625.8], [99.1, 618.2], [221.8, 616], [85.3, 607.1], [212, 664.9], [72, 595.1], [214.7, 655.1]], "even": [223.2, 626.8347826086956], "odd": [74.25909090909092, 608.7227272727273]}, {"id": "1767681092057", "ver": "2.2.1", "cL": {"r": 56, "x": 52, "y": 693.3333333333334}, "cR": {"r": 56, "x": 220, "y": 693.3333333333334}, "P": [[107.7, 737.1], [261.3, 751.5], [81.6, 729.1], [249.1, 758.4], [82.7, 750.4], [273.6, 763.7], [89.1, 729.1], [286.9, 768.5], [99.7, 731.7], [271.5, 757.9], [81.6, 728.5], [277.9, 760], [84.3, 737.6], [259.7, 752.5], [81.1, 749.9], [269.3, 755.7], [66.7, 736.5], [286.9, 770.1], [95.5, 750.4], [280.5, 769.6], [77.3, 752], [281.6, 768], [75.7, 755.2], [273.6, 760], [81.1, 733.3], [264.5, 764.8], [83.7, 733.3], [253.9, 768], [64, 746.7], [290.1, 779.2], [91.7, 734.4], [289.6, 760.5], [101.3, 758.9], [262.4, 754.7], [70.4, 758.4], [257.6, 754.7], [75.7, 754.7], [276.3, 769.6], [118.4, 744.5], [274.7, 757.9], [82.7, 764.3], [268.3, 765.3], [110.9, 731.7]], "even": [86.49545454545455, 743.0772727272728], "odd": [271.87142857142857, 762.4095238095238]}], "bug": [{"id": "1726386044648", "ver": "1.0.0", "cL": {"r": 56, "x": 63.5, "y": 772}, "cR": {"r": 56, "x": 63.5, "y": 772}, "P": [[100, 42], [79, 57.3], [102, 34.3], [90, 67.3], [103.3, 44.7], [84.7, 63.7], [101.7, 43.7], [95.7, 66.7], [111.7, 48], [73.3, 64.3], [101, 51], [101, 74], [105.3, 47], [114, 77], [105.3, 44.7], [81, 64.7], [104.3, 37], [112.7, 70.3], [103, 35], [89.7, 67], [103.3, 37.7], [103.7, 70.7], [99.7, 47.3], [93.3, 75], [100, 40], [95.7, 74], [99.3, 35.3], [82.3, 68], [100.3, 48], [89.7, 69.7], [100.3, 45], [85.3, 68.7], [100.3, 39.7], [81, 64.7], [98.3, 41.3], [100.3, 71], [98.3, 32.3], [125, 74], [104, 37.3], [113.3, 71.3], [108.3, 37.3], [126, 77], [115, 37.7], [134.3, 76.7], [115, 39.7], [129.7, 81], [119, 44.7], [139.7, 84.7], [115.7, 38], [123.3, 75.3], [121.7, 44], [127.7, 83], [112.3, 41.3], [86, 67], [103, 32.3], [88.7, 64], [106.7, 24.7], [114, 70.7], [111.3, 32.3], [131, 74], [107, 33.3], [118.7, 72], [100.7, 28], [93.7, 64.7], [99.7, 39.7], [102, 69], [101.3, 17], [115.3, 68.7], [102.3, 44.7], [97.7, 64.3], [104, 31.7], [91.3, 59.7], [100, 40.3], [124.7, 71], [95.7, 40.3], [91.3, 67.7], [89.3, 33.3], [105.3, 73.7], [87.7, 25.3], [111.7, 67.3], [89.3, 32.3], [106.7, 70.7], [91.7, 24.7], [96.7, 62.3], [87, 37.7], [120.7, 64], [91, 30], [128.7, 73.3], [86, 26.7], [110, 67.7], [110.7, 36.3], [128.7, 67.3], [100.3, 35]], "even": [102.4063829787234, 37.43829787234043], "odd": [105.09347826086956, 69.91739130434783]}, {"id": "1734669097069", "ver": "1.0.0", "cL": {"r": 56, "x": 59.5, "y": 736}, "cR": {"r": 56, "x": 59.5, "y": 736}, "P": [[92, 58.5], [92, 58], [89.5, 64], [94.5, 46.5], [82.5, 53], [82.5, 46.5], [92, 57], [92, 58], [85.5, 58.5], [86, 65.5], [85.5, 59.5], [75, 52], [101.5, 66], [83.5, 64.5], [104, 69], [71.5, 63], [101, 71.5], [81.5, 64], [98, 76.5], [83, 67.5], [97.5, 73], [65, 56.5], [104, 71.5], [91.5, 63], [109, 71.5], [77, 67], [90.5, 75.5], [64.5, 59], [83.5, 79.5], [76.5, 43], [80.5, 59], [71.5, 51], [80.5, 54.5], [63, 38.5], [90.5, 59], [77, 57.5], [99, 65.5], [57, 59.5], [103, 63.5], [88.5, 57], [114.5, 69.5], [90, 58.5], [98, 71.5], [79, 68.5], [93.5, 72.5], [65.5, 61.5], [87.5, 60], [83, 49], [87.5, 68], [75.5, 71.5], [77, 56], [70.5, 49], [63.5, 43.5], [72, 51], [99, 64.5], [96.5, 55], [78.5, 62]], "even": [92.01724137931035, 64.60344827586206], "odd": [78.75, 57.19642857142857]}]};
+const I={
+ th:{h1:"กู้คืน “วงที่สอง” จากข้อมูล tap ได้ไหม? (จาก 1000 records)",
+   sub:"แต่ละจุด = ตำแหน่งเริ่มของ 1 tap · สี = ลำดับคู่/คี่ (ควรเป็นคนละเป้าถ้าสลับซ้าย-ขวา) · อัตราส่วนภาพ 1:1",
+   legEven:"tap ลำดับคู่",legOdd:"tap ลำดับคี่",legCir:"วงที่เก็บไว้ (stored)",
+   good:"ข้อมูลดี",bug:"BUG circle ซ้ำ",sep:"even–odd sep",
+   capGood:"→ สองกระจุกแยกชัด วาง 2 วงได้",capBug:"→ จุดทับกันก้อนเดียว วางวงที่สองไม่ได้",
+   cTitle:"สรุป: กู้คืนวงที่สองได้เฉพาะข้อมูลที่ดีอยู่แล้ว — ส่วนข้อมูลที่ buggy กู้ไม่ได้",
+   c1:"v2.2.x: จุดคู่/คี่แยกเป็น 2 กระจุกชัด → วาง 2 วงได้ (แต่ circle ปกติอยู่แล้ว)",
+   c2:"v1.0.0 (bug, circle ซ้ำ): จุดคู่/คี่ <b>ทับกันเป็นก้อนเดียว</b> → <b>ไม่มีข้อมูลพอจะวางวงที่สอง</b>",
+   c3:"โมดูล v1.0.0 ดูเหมือนบันทึกพิกัด tap <b>เทียบกับเป้า (relative)</b> ทำให้ taps ซ้าย-ขวาตกที่เดียวกัน — ข้อมูลแยกซ้าย/ขวาหายจริง",
+   cWay:"<b>ทางที่ทำได้:</b> ใช้เฉพาะข้อมูล v2.2.x (ตั้งแต่ ม.ค. 2026) สำหรับวิเคราะห์ซ้าย/ขวา · v1.0.0 ใช้ได้แค่ score/จำนวน tap"},
+ en:{h1:"Can we reconstruct the “2nd circle” from tap data? (from 1000 records)",
+   sub:"Each dot = start of 1 tap · color = even/odd order (should be opposite targets if alternating) · 1:1 aspect",
+   legEven:"even-index tap",legOdd:"odd-index tap",legCir:"stored circle",
+   good:"Good data",bug:"BUG duplicate circle",sep:"even–odd sep",
+   capGood:"→ two clear clusters → can place 2 circles",capBug:"→ single overlapping blob → cannot place 2nd circle",
+   cTitle:"Conclusion: the 2nd circle is recoverable only for already-good data — buggy data can't be recovered",
+   c1:"v2.2.x: even/odd dots split into 2 clear clusters → 2 circles placeable (but circles are already valid)",
+   c2:"v1.0.0 (bug, duplicate circle): even/odd dots <b>overlap into one blob</b> → <b>not enough info to place a 2nd circle</b>",
+   c3:"v1.0.0 seems to record tap coords <b>relative to the target</b>, so left/right taps land in the same place — the side information is genuinely lost",
+   cWay:"<b>What works:</b> use only v2.2.x data (from Jan 2026) for left/right analysis · v1.0.0 only usable for score / tap-count"}
+};
+let L='th';
+function dist(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1]);}
+function panel(rec,kind){const T=I[L];
+ const card=document.createElement('div');card.className='card';
+ const good=kind==='good';
+ const ev=rec.P.filter((_,i)=>i%2===0), od=rec.P.filter((_,i)=>i%2===1);
+ const sep=Math.round(dist(rec.even,rec.odd));
+ card.innerHTML=`<div class="ct">${good?'<b class="good">'+T.good+' (v'+rec.ver+')</b>':'<b class="bad">'+T.bug+' (v'+rec.ver+')</b>'} · n=${rec.P.length} · ${T.sep} = <b>${sep}px</b></div>`;
+ const cv=document.createElement('canvas');cv.height=260;card.appendChild(cv);
+ const cap=document.createElement('div');cap.className='cap';cap.textContent=good?T.capGood:T.capBug;card.appendChild(cap);
+ document.getElementById('grid').appendChild(card);
+ requestAnimationFrame(()=>{
+  const DPR=window.devicePixelRatio||1,w=cv.clientWidth,h=260;cv.width=w*DPR;cv.height=h*DPR;
+  const x=cv.getContext('2d');x.setTransform(DPR,0,0,DPR,0,0);
+  let pts=rec.P.slice();const circSame=good;
+  if(circSame){pts.push([rec.cL.x,rec.cL.y]);pts.push([rec.cR.x,rec.cR.y]);}
+  let minx=Math.min(...pts.map(p=>p[0])),maxx=Math.max(...pts.map(p=>p[0])),miny=Math.min(...pts.map(p=>p[1])),maxy=Math.max(...pts.map(p=>p[1]));
+  const pad=40,sw=maxx-minx||1,sh=maxy-miny||1,m=24,sc=Math.min((w-2*m)/(sw+pad),(h-2*m)/(sh+pad));
+  const cx=(minx+maxx)/2,cy=(miny+maxy)/2;const X=px=>w/2+(px-cx)*sc,Y=py=>h/2+(py-cy)*sc;
+  if(circSame){for(const c of [rec.cL,rec.cR]){x.strokeStyle='#94a3b8';x.lineWidth=1.5;x.globalAlpha=.9;x.beginPath();x.arc(X(c.x),Y(c.y),(c.r||56)*sc,0,7);x.stroke();}x.globalAlpha=1;}
+  ev.forEach(p=>{x.fillStyle='#fb923c';x.globalAlpha=.8;x.beginPath();x.arc(X(p[0]),Y(p[1]),3,0,7);x.fill();});
+  od.forEach(p=>{x.fillStyle='#2dd4bf';x.globalAlpha=.8;x.beginPath();x.arc(X(p[0]),Y(p[1]),3,0,7);x.fill();});
+  x.globalAlpha=1;
+  [['#fb923c',rec.even],['#2dd4bf',rec.odd]].forEach(([c,ct])=>{x.strokeStyle='#fff';x.fillStyle=c;x.lineWidth=2;x.beginPath();x.arc(X(ct[0]),Y(ct[1]),6,0,7);x.fill();x.stroke();});
+ });
+}
+function render(){const T=I[L];document.documentElement.lang=L;
+ document.getElementById('h1').textContent=T.h1;
+ document.getElementById('sub').textContent=T.sub;
+ document.getElementById('leg').innerHTML=`<span><span class="sw" style="background:var(--ev)"></span>${T.legEven}</span><span><span class="sw" style="background:var(--od)"></span>${T.legOdd}</span><span><span class="sw" style="background:var(--cir);border-radius:2px"></span>${T.legCir}</span>`;
+ document.getElementById('concl').innerHTML=`<b>${T.cTitle}</b><ul><li><span class="good">${T.c1}</span></li><li><span class="bad">${T.c2}</span></li><li>${T.c3}</li></ul>${T.cWay}`;
+ document.getElementById('grid').innerHTML='';
+ D.good.forEach(r=>r&&panel(r,'good'));D.bug.forEach(r=>r&&panel(r,'bug'));
+ document.getElementById('bTH').classList.toggle('on',L==='th');document.getElementById('bEN').classList.toggle('on',L==='en');
+}
+document.getElementById('bTH').addEventListener('click',()=>{L='th';render();});
+document.getElementById('bEN').addEventListener('click',()=>{L='en';render();});
+render();
+</script></body></html>
