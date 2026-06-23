@@ -43,7 +43,7 @@ const D={"recs":[{"t":1720344854769,"id":"1720344854769","uid":"0tLWqAAJ","build
 const COL={bug:'#ef4444',ok:'#22c55e',c1:'#38bdf8',c2:'#a78bfa',c3:'#fbbf24',c4:'#f472b6',mut:'#64748b',orange:'#fb923c'};
 const I={
  th:{h1:"DualTap — Metadata & การกระจายตามเวลา",sub:"1000 records · indicator: กดซ้ำข้าง vs สลับข้างสม่ำเสมอ + circle bug",
-   bars:"จำนวน record ต่อเดือน — ■ circle bug (L==R) vs ■ ปกติ (L≠R)",colorlabel:"ระบายสีจุดตาม:",
+   bars:"จำนวน record ต่อเดือน — <span style='color:#ef4444'>■</span> circle bug (L==R) vs <span style='color:#22c55e'>■</span> ปกติ (L≠R)",colorlabel:"ระบายสีจุดตาม:",
    strip:"strip plot — แต่ละจุด = 1 record เรียงตามเวลา (เลื่อนเมาส์ดูรายละเอียด)",notesH:"Nature of data — ข้อสังเกตหลัก",
    opt:{altpat:"การกด: ซ้ำข้าง vs สลับสม่ำเสมอ ★",degen:"Circle bug (L==R)",risk:"ML prediction risk",dver:"Test module version",calib:"Calibration (display)",build:"buildType"},
    pills:{records:"records",range:"ช่วง",twoTarget:"วัดซ้ำ/สลับได้ (2 เป้าจริง)",even:"สลับสม่ำเสมอ",mixed:"ผสม",repeat:"กดซ้ำข้างมาก",na:"แยกข้างไม่ได้",bug:"circle bug",risk:"ML risk=true"},
@@ -61,7 +61,7 @@ const I={
     "<b>{na}/{n} record แยกข้างไม่ได้</b> (พิกัด tap เป็นก้อนเดียว/blob — ส่วนใหญ่คือ v1.0.0 ที่ circle เป็นบั๊ก) จึงประเมิน repeat/alternate ไม่ได้",
     "circle bug (L==R) {degen}/{n}; ครบ 2 มือ {bothHands}/{n}; ML risk=true {risk}"]},
  en:{h1:"DualTap — Metadata & timeline distribution",sub:"1000 records · indicator: same-side repeats vs even alternation + circle bug",
-   bars:"Records per month — ■ circle bug (L==R) vs ■ valid (L≠R)",colorlabel:"Color dots by:",
+   bars:"Records per month — <span style='color:#ef4444'>■</span> circle bug (L==R) vs <span style='color:#22c55e'>■</span> valid (L≠R)",colorlabel:"Color dots by:",
    strip:"strip plot — 1 dot per record over time (hover for details)",notesH:"Nature of data — key observations",
    opt:{altpat:"Tapping: repeats vs even alternation ★",degen:"Circle bug (L==R)",risk:"ML prediction risk",dver:"Test module version",calib:"Calibration (display)",build:"buildType"},
    pills:{records:"records",range:"range",twoTarget:"measurable (2 real targets)",even:"even alternation",mixed:"mixed",repeat:"repeat-heavy",na:"undeterminable",bug:"circle bug",risk:"ML risk=true"},
@@ -144,7 +144,7 @@ function notes(){const T=I[L],s=D.summary;$('notes').innerHTML=T.notes.map(t=>`<
 function buildSelect(){const cur=$('colorby').value||'altpat';const T=I[L].opt;
  $('colorby').innerHTML=Object.keys(T).map(k=>`<option value="${k}"${k===cur?' selected':''}>${T[k]}</option>`).join('');}
 function applyLang(){const T=I[L];document.documentElement.lang=L;
- $('h1').textContent=T.h1;$('sub').textContent=T.sub;$('lblBars').textContent=T.bars;$('lblColor').textContent=T.colorlabel;
+ $('h1').textContent=T.h1;$('sub').textContent=T.sub;$('lblBars').innerHTML=T.bars;$('lblColor').textContent=T.colorlabel;
  $('lblStrip').textContent=T.strip;$('lblNotes').textContent=T.notesH;
  buildSelect();stats();notes();drawBars();drawStrip();
  $('bTH').classList.toggle('on',L==='th');$('bEN').classList.toggle('on',L==='en');
