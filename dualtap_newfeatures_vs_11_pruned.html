@@ -55,9 +55,17 @@
   .pill.new{border:1px solid var(--new);color:#d9c2ff}
   .foot{color:var(--mut);font-size:.8rem;margin-top:28px;text-align:center}
   svg{max-width:100%}
+  .langbar{position:fixed;top:12px;right:14px;display:flex;gap:4px;z-index:50}
+  .langbar button{background:#0c1116;color:var(--mut);border:1px solid var(--line);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer}
+  .langbar button.on{background:var(--new);color:#1a1030;border-color:var(--new);font-weight:700}
+  .lang{display:none} .lang.on{display:block}
 </style>
 </head>
 <body>
+<div class="langbar"><button id="bTH">ไทย</button><button id="bEN">EN</button></div>
+
+<!-- ===================== THAI ===================== -->
+<div class="lang on" id="th">
 <div class="wrap">
   <h1>DualTap — ฟีเจอร์ใหม่ vs 11 ฟีเจอร์ + Pruning</h1>
   <p class="sub">RandomForest (tuned) · 10-fold group CV (ไม่มี patient leak) · pooled OOF · 1,406 ไฟล์ / 1,189 ผู้ป่วย · 2026-06-22</p>
@@ -423,5 +431,388 @@
 
   <p class="foot">RF tuned (400/d10/leaf4/maxsamp0.8/balanced — ทุกหัวข้อใช้ 400 ต้น) · StratifiedGroupKFold(10, seed=42) · group=ผู้ป่วย · pooled OOF · SHAP TreeExplainer · threshold analysis · DualTapReview</p>
 </div>
+</div>
+
+<!-- ===================== ENGLISH ===================== -->
+<div class="lang" id="en">
+<div class="wrap">
+  <h1>DualTap — New features vs 11 features + Pruning</h1>
+  <p class="sub">RandomForest (tuned) · 10-fold group CV (no patient leak) · pooled OOF · 1,406 files / 1,189 patients · 2026-06-22</p>
+
+  <div class="meta">
+    <div class="mcard"><div class="n">0.780</div><div class="l">AUC · 11 features</div></div>
+    <div class="mcard" style="border-color:var(--new)"><div class="n" style="color:var(--new)">0.791</div><div class="l">AUC · +12 new (23)</div></div>
+    <div class="mcard" style="border-color:var(--gold)"><div class="n" style="color:var(--gold)">0.791</div><div class="l">AUC · pruned 13 ★</div></div>
+    <div class="mcard" style="border-color:var(--gold)"><div class="n" style="color:var(--gold)">0.730</div><div class="l">Acc · pruned 13 (best)</div></div>
+  </div>
+
+  <h2>0. Background &amp; model-development overview</h2>
+  <p class="small">
+    This document summarizes the review and improvement of the ML model for the <strong>dualtap</strong> task (Parkinson's screening), from the deployed model to the final model we chose.
+    Data: <code>preselectPD</code> + <code>preselectControl</code>, <strong>1,406 files / 1,189 patients</strong> (PD 622 / Control 784).
+    All numbers come from <strong>10-fold StratifiedGroupKFold (seed 42, group = patient)</strong> → no patient leak, reported as pooled out-of-fold.
+  </p>
+
+  <h3>0.1 Starting point — original 11 features (deployed model / Branch A)</h3>
+  <p class="small">The production model extracts <strong>11 features</strong> per file via <code>extract_tapcount_statistics()</code>, then feeds a RandomForest. These are all the original features:</p>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Original feature</th><th>Meaning</th></tr>
+    <tr><td>1</td><td><code>Score</code></td><td>Score computed by the app</td></tr>
+    <tr><td>2</td><td><code>Tap Count</code></td><td>Total number of taps (strokes)</td></tr>
+    <tr><td>3</td><td><code>Max Tap Points</code></td><td>Max touch points within a single tap</td></tr>
+    <tr><td>4</td><td><code>Std Tap Points</code></td><td>Std of points per tap</td></tr>
+    <tr><td>5</td><td><code>Mean Tap Points</code></td><td>Mean points per tap</td></tr>
+    <tr><td>6</td><td><code>Total Points</code></td><td>Total touch points across all taps</td></tr>
+    <tr><td>7</td><td><code>ppInsideToAll</code></td><td>Fraction of points inside the target radius (accuracy)</td></tr>
+    <tr><td>8</td><td><code>ppLeftToRight</code></td><td>Left–right balance (counted per point)</td></tr>
+    <tr><td>9</td><td><code>tDiff_mean</code></td><td>Mean inter-tap interval</td></tr>
+    <tr><td>10</td><td><code>tDiff_max</code></td><td>Longest pause between taps</td></tr>
+    <tr><td>11</td><td><code>tDiff_min</code></td><td>Fastest inter-tap interval</td></tr>
+  </table></div>
+  <p class="small">Deployed model: <code>RandomForest</code> (100 trees, depth None, class_weight balanced) · predicts per file at <code>/predict_dualtap</code>. <strong>Baseline on the full set = AUC 0.757 / Acc 0.696</strong>. Issues found: <code>ppInsideToAll</code>/<code>ppLeftToRight</code> had fragile definitions (distorted at serving time), unlimited depth (overfit), and no threshold selection.</p>
+
+  <h3>0.2 Development steps (in order)</h3>
+  <div class="scroll"><table>
+    <tr><th>Step</th><th>What was done</th><th>Result (AUC)</th></tr>
+    <tr><td>① Baseline</td><td>Run the original 11 features + RF (deployed config) on the full set, 10-fold group CV</td><td>0.757</td></tr>
+    <tr><td>② Fix features</td><td>Fix <code>ppInsideToAll→mean_acc</code> (distance-to-target / radius, continuous) and <code>ppLeftToRight→ppLR_stroke</code> (balance counted per stroke)</td><td>0.772</td></tr>
+    <tr><td>③ Tune model</td><td>Tune RandomForest → 400 trees, max_depth 10, min_samples_leaf 4, max_samples 0.8</td><td>0.780</td></tr>
+    <tr><td>④ Compare 11 models</td><td>Try RF/GB/HistGB/MLP/SVM/KNN/LogReg/… → top-5 tied ⇒ <em>the ceiling is the features, not the model</em></td><td>0.77–0.78</td></tr>
+    <tr><td>⑤ Engineer new features</td><td>Add 12 physiology-based features (rhythm variability, tremor, speed, fatigue, consistency)</td><td>0.791</td></tr>
+    <tr style="background:rgba(255,213,107,.10)"><td>⑥ Pruning ★</td><td>Keep the <strong>13 most important features</strong> (drop redundant/weak ones)</td><td><strong>0.791</strong></td></tr>
+    <tr><td>⑦ SHAP</td><td>Explain features — confirm <code>tDiff_std</code>/<code>tDiff_cv</code> (rhythm variability) are the strongest PD signal</td><td>—</td></tr>
+    <tr><td>⑧ Screening threshold</td><td>Find a high-Recall operating point — recommend thr 0.275 (Sens 0.90)</td><td>—</td></tr>
+  </table></div>
+
+  <h3>0.3 Chosen model + final performance</h3>
+  <div class="callout ok">
+    <strong>Chosen model:</strong> <code>RandomForest(n_estimators=400, max_depth=10, min_samples_leaf=4, min_samples_split=5, max_samples=0.8, class_weight='balanced', random_state=42)</code> on the <strong>13 selected features</strong>.
+  </div>
+  <div class="meta">
+    <div class="mcard" style="border-color:var(--ok)"><div class="n" style="color:var(--ok)">0.791</div><div class="l">ROC-AUC</div></div>
+    <div class="mcard"><div class="n">0.730</div><div class="l">Accuracy (thr 0.5)</div></div>
+    <div class="mcard"><div class="n">0.686</div><div class="l">F1</div></div>
+    <div class="mcard"><div class="n">0.664</div><div class="l">Sensitivity (thr 0.5)</div></div>
+    <div class="mcard"><div class="n">0.783</div><div class="l">Specificity (thr 0.5)</div></div>
+  </div>
+  <p class="small">
+    Confusion matrix (thr 0.5): TN 614 · FP 170 · FN 209 · TP 413.
+    <strong>Screening mode (recommended): threshold 0.275</strong> → Sensitivity <strong>0.90</strong>, Specificity 0.39, NPV 0.83, missed PD reduced to <strong>62/622 cases</strong> (from 209 at thr 0.5).
+    <br><strong>Overall:</strong> improved from baseline <span class="num">AUC 0.757 / Acc 0.696</span> → <span class="num" style="color:var(--ok)">AUC 0.791 / Acc 0.730</span> via fixing feature definitions + tuning the model + adding physiology features + feature selection — all on patient-leak-free validation.
+  </p>
+  <p class="small" style="color:var(--mut)">Per-step detail follows (§1–§10): new features &amp; pruning, confusion matrix, ROC, SHAP, screening threshold, and an appendix with the full computation of every feature.</p>
+
+  <h2>1. Concept: new features from the same data</h2>
+  <p class="small">Earlier lesson: "the ceiling is the features, not the model." So we engineered <strong>12 new physiology-based features</strong> from the same dualtap.json (no new data collection):</p>
+  <div class="scroll"><table>
+    <tr><th>Group</th><th>New features</th><th>PD symptom it reflects</th></tr>
+    <tr><td>Rhythm variability</td><td><code>tDiff_std</code>, <code>tDiff_cv</code>, <code>tDiff_median</code>, <code>tDiff_slope</code></td><td>arrhythmia / irregular rhythm + progressive slowing</td></tr>
+    <tr><td>Speed</td><td><code>tap_rate</code>, <code>duration_s</code></td><td>bradykinesia (slow tapping)</td></tr>
+    <tr><td>Fatigue</td><td><code>fatigue_ratio</code></td><td>second half slower than first half</td></tr>
+    <tr><td>Tremor</td><td><code>spread_mean</code>, <code>spread_max</code>, <code>path_mean</code></td><td>tremor within a tap (scattered points / long drag)</td></tr>
+    <tr><td>Consistency</td><td><code>acc_std</code>, <code>tapPts_cv</code></td><td>inconsistent accuracy / tap size</td></tr>
+  </table></div>
+
+  <h2>2. Results: 11 vs 23 (RF tuned)</h2>
+  <div class="scroll"><table>
+    <tr><th>feature set</th><th class="num">AUC</th><th class="num">Acc</th><th class="num">F1</th><th class="num">Sens</th><th class="num">Spec</th><th class="num">CM (TN,FP,FN,TP)</th></tr>
+    <tr><td>11 fixed (original)</td><td class="num">0.780</td><td class="num">0.721</td><td class="num">0.672</td><td class="num">0.652</td><td class="num">0.777</td><td class="num">609,175,217,405</td></tr>
+    <tr><td>11 + 12 new = 23</td><td class="num">0.791</td><td class="num">0.724</td><td class="num">0.677</td><td class="num">0.659</td><td class="num">0.777</td><td class="num">609,175,213,409</td></tr>
+    <tr><td>Δ</td><td class="num" style="color:var(--ok)">+0.011</td><td class="num" style="color:var(--ok)">+0.003</td><td class="num" style="color:var(--ok)">+0.005</td><td class="num" style="color:var(--ok)">+0.007</td><td class="num">—</td><td class="num"></td></tr>
+  </table></div>
+
+  <h3>Feature importance (23-feature model) — new features lead the top ranks</h3>
+  <div class="bar-row"><div style="color:var(--new)">tDiff_std ★new</div><div class="bwrap"><div class="bar new" style="width:100%"></div></div><div class="num">.095</div></div>
+  <div class="bar-row"><div style="color:var(--new)">tDiff_cv ★new</div><div class="bwrap"><div class="bar new" style="width:84%"></div></div><div class="num">.080</div></div>
+  <div class="bar-row"><div>mean_acc</div><div class="bwrap"><div class="bar" style="width:83%"></div></div><div class="num">.079</div></div>
+  <div class="bar-row"><div>tDiff_min</div><div class="bwrap"><div class="bar" style="width:69%"></div></div><div class="num">.066</div></div>
+  <div class="bar-row"><div style="color:var(--new)">tapPts_cv ★new</div><div class="bwrap"><div class="bar new" style="width:60%"></div></div><div class="num">.057</div></div>
+  <div class="bar-row"><div>tDiff_max</div><div class="bwrap"><div class="bar" style="width:52%"></div></div><div class="num">.049</div></div>
+  <div class="bar-row"><div>Score</div><div class="bwrap"><div class="bar" style="width:47%"></div></div><div class="num">.045</div></div>
+  <div class="bar-row"><div style="color:var(--new)">duration_s ★new</div><div class="bwrap"><div class="bar new" style="width:44%"></div></div><div class="num">.042</div></div>
+  <div class="bar-row"><div style="color:var(--new)">tDiff_slope ★new</div><div class="bwrap"><div class="bar new" style="width:41%"></div></div><div class="num">.039</div></div>
+  <div class="callout new"><strong>Rhythm irregularity (tDiff_std, tDiff_cv) is the strongest PD signal</strong> — beating every original feature. It matches clinical bradykinesia/arrhythmia.</div>
+
+  <h2>3. Pruning — drop the weak features</h2>
+  <p class="small">Several new features (spread, path, tap_rate, fatigue) have low importance. We tried keeping only the top-K by importance:</p>
+  <div class="scroll"><table>
+    <tr><th>#features</th><th class="num">AUC</th><th class="num">Acc</th><th class="num">F1</th><th class="num">Sens</th><th class="num">Spec</th></tr>
+    <tr><td>23 (all)</td><td class="num">0.791</td><td class="num">0.724</td><td class="num">0.677</td><td class="num">0.659</td><td class="num">0.777</td></tr>
+    <tr><td>16</td><td class="num">0.793</td><td class="num">0.730</td><td class="num">0.683</td><td class="num">0.664</td><td class="num">0.783</td></tr>
+    <tr class="best"><td><strong>13 ★ best</strong></td><td class="num">0.791</td><td class="num"><strong>0.730</strong></td><td class="num"><strong>0.686</strong></td><td class="num">0.664</td><td class="num">0.783</td></tr>
+    <tr><td>10</td><td class="num">0.791</td><td class="num">0.728</td><td class="num">0.685</td><td class="num">0.670</td><td class="num">0.776</td></tr>
+    <tr><td>8</td><td class="num">0.782</td><td class="num">0.723</td><td class="num">0.680</td><td class="num">0.669</td><td class="num">0.768</td></tr>
+    <tr><td>11 fixed (reference)</td><td class="num">0.780</td><td class="num">0.721</td><td class="num">0.672</td><td class="num">0.652</td><td class="num">0.777</td></tr>
+  </table></div>
+  <div class="callout ok"><strong>Pruning works:</strong> keeping <strong>13 features</strong> gives AUC 0.791 and the <u>highest Acc 0.730 / F1 0.686</u> — better than both 11-fixed and 23-full while using fewer features (faster, less overfit, easier to interpret). Below 10 features, AUC starts to drop.</div>
+  <p class="small" style="color:var(--mut)">Note: every number in this document uses the same RF with <strong>400 trees</strong> (same config as §2) so that confusion matrices and metrics stay consistent across all sections.</p>
+
+  <h3>13 features kept (best set)</h3>
+  <div>
+    <span class="pill new">tDiff_std</span><span class="pill new">tDiff_cv</span><span class="pill kept">mean_acc</span><span class="pill kept">tDiff_min</span><span class="pill new">tapPts_cv</span><span class="pill kept">tDiff_max</span><span class="pill kept">Score</span><span class="pill kept">Total Points</span><span class="pill new">duration_s</span><span class="pill new">tDiff_slope</span><span class="pill kept">Mean Tap Points</span><span class="pill new">acc_std</span><span class="pill kept">ppLR_stroke</span>
+  </div>
+  <p class="small" style="margin-top:6px">Dropped 10: <span class="pill drop">Tap Count</span><span class="pill drop">Max Tap Points</span><span class="pill drop">Std Tap Points</span><span class="pill drop">tDiff_mean</span><span class="pill drop">tDiff_median</span><span class="pill drop">tap_rate</span><span class="pill drop">fatigue_ratio</span><span class="pill drop">spread_mean</span><span class="pill drop">spread_max</span><span class="pill drop">path_mean</span> (<span class="new">purple</span> = the 5 new features that were kept)</p>
+
+  <h2>4. Confusion matrix — comparing 3 sets</h2>
+  <div style="display:flex;gap:20px;flex-wrap:wrap">
+    <div>
+      <h3>11 fixed · AUC 0.780</h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">true CT</div><div class="cmcell tn"><div class="v">609</div>TN</div><div class="cmcell fp"><div class="v">175</div>FP</div>
+        <div class="cmhdr">true PD</div><div class="cmcell fn"><div class="v">217</div>FN</div><div class="cmcell tp"><div class="v">405</div>TP</div>
+      </div>
+    </div>
+    <div>
+      <h3>23 full · AUC 0.791</h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">true CT</div><div class="cmcell tn"><div class="v">609</div>TN</div><div class="cmcell fp"><div class="v">175</div>FP</div>
+        <div class="cmhdr">true PD</div><div class="cmcell fn"><div class="v">213</div>FN</div><div class="cmcell tp"><div class="v">409</div>TP</div>
+      </div>
+    </div>
+    <div>
+      <h3 style="color:var(--gold)">13 pruned ★ · AUC 0.791</h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">true CT</div><div class="cmcell tn"><div class="v">614</div>TN</div><div class="cmcell fp"><div class="v">170</div>FP</div>
+        <div class="cmhdr">true PD</div><div class="cmcell fn"><div class="v">209</div>FN</div><div class="cmcell tp"><div class="v">413</div>TP</div>
+      </div>
+    </div>
+  </div>
+  <p class="small" style="margin-top:8px">pruned-13 catches more PD (TP 405→413, FN 217→209) and raises fewer false alarms on Control (FP 175→170) vs 11-fixed. (All at threshold 0.5, RF 400 trees.)</p>
+
+  <h2>5. ROC — 11 vs 23</h2>
+  <svg viewBox="0 0 300 300" width="290" height="290">
+    <rect x="46" y="36" width="240" height="240" fill="#0c1116" stroke="#2b3744"/>
+    <line x1="46" y1="276" x2="286" y2="36" stroke="#3a4a5a" stroke-dasharray="4 4"/>
+    <polyline points="46.0,276.0 48.1,250.5 50.6,219.7 53.0,208.5 55.2,197.7 59.5,186.5 62.2,183.8 65.0,176.1 68.3,165.6 72.9,159.1 75.4,154.8 77.5,148.3 80.3,140.6 83.7,136.3 88.9,130.9 93.1,126.7 96.2,122.8 101.7,117.8 104.5,113.9 114.0,108.5 118.9,105.8 122.8,102.0 129.3,99.7 137.8,96.2 141.5,91.9 147.0,88.1 150.7,84.2 158.0,80.8 165.7,77.7 171.8,71.1 177.9,68.4 183.1,64.6 188.7,59.5 203.0,54.5 206.7,50.7 219.0,48.0 235.8,44.9 251.1,42.2 272.2,39.5 286.0,36.0"
+      fill="none" stroke="#6b7d8f" stroke-width="2" stroke-dasharray="3 3"/>
+    <polyline points="46.0,276.0 47.8,233.6 49.7,219.3 52.4,204.2 54.9,191.9 57.9,184.2 60.1,176.1 65.0,170.3 67.7,163.7 70.2,157.2 75.4,150.2 79.4,146.4 81.5,141.7 84.3,135.9 87.6,128.2 91.6,124.0 96.5,120.5 99.9,117.0 102.9,113.9 108.1,107.0 116.1,103.5 120.4,99.7 126.8,95.0 132.3,90.8 139.4,86.5 145.8,83.5 153.1,79.6 160.2,76.5 166.3,73.0 172.7,68.8 180.7,65.3 189.9,62.2 198.4,59.5 204.3,56.1 213.4,51.4 222.9,48.3 233.3,45.3 239.5,42.6 260.6,39.1 286.0,36.0"
+      fill="none" stroke="#c08cff" stroke-width="2.5"/>
+    <text x="166" y="296" fill="#9fb0c0" font-size="11" text-anchor="middle">False Positive Rate</text>
+    <text x="16" y="156" fill="#9fb0c0" font-size="11" text-anchor="middle" transform="rotate(-90 16 156)">True Positive Rate</text>
+    <text x="150" y="120" fill="#c08cff" font-size="11" font-weight="700">+new feats AUC 0.791</text>
+    <text x="150" y="136" fill="#6b7d8f" font-size="11">11 fixed AUC 0.780</text>
+  </svg>
+
+  <h2>6. Conclusion</h2>
+  <div class="callout ok"><strong>New features + pruning genuinely help:</strong> AUC 0.780 → <strong>0.791</strong>, Acc 0.721 → <strong>0.730</strong> using <strong>13 features</strong> (selected from 23). The main driver is <strong>rhythm irregularity (tDiff_std, tDiff_cv)</strong> — the most important new features. This confirms the prior lesson that investing in features beats swapping algorithms.</div>
+  <div class="callout"><strong>Full cumulative path:</strong> original 0.757 → fix features 0.772 → tune RF 0.780 → <strong>+new features (pruned 13) 0.791</strong>. Remaining next steps: combine repeat features (helped before), patient-level aggregation (#3), and multimodal fusion (#6), which should push further than dualtap alone.</div>
+
+  <h2>7. Full computation of all 23 features (with keep / exclude status)</h2>
+  <p class="small">
+    Notation: <code>taps</code> = list of strokes; stroke i has <code>ni</code> points, each <code>{x,y,ts}</code> (ts in ms);
+    <code>mx,my</code> = stroke centroid; <code>r</code> = circle radius (=56); <code>dist</code> = point distance to the "nearer target" (midpoint rule);
+    <code>tsᵢ</code> = mean ts of stroke i; <code>tDiff</code> = difference <code>tsᵢ − tsᵢ₋₁</code> (sequence of inter-tap intervals).
+    <span style="color:var(--ok)">■ green = keep–original (7)</span> &nbsp; <span style="color:var(--new)">■ purple = keep–new (6)</span> &nbsp; <span style="color:var(--mut)">■ gray = excluded (10)</span> · sorted by importance.
+  </p>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Feature</th><th>Computation</th><th class="num">imp.</th><th>Status</th></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>1</td><td><code>tDiff_std</code></td><td>Std of tDiff = <code>std(tDiff)</code> — rhythm irregularity</td><td class="num">.095</td><td style="color:var(--new)">✔ keep · new</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>2</td><td><code>tDiff_cv</code></td><td><code>std(tDiff) / mean(tDiff)</code> — normalized rhythm variability</td><td class="num">.080</td><td style="color:var(--new)">✔ keep · new</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>3</td><td><code>mean_acc</code></td><td>Mean over all points of <code>dist / r</code> — mean distance to target (accuracy)</td><td class="num">.079</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>4</td><td><code>tDiff_min</code></td><td><code>min(tDiff)</code> — fastest inter-tap interval</td><td class="num">.066</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>5</td><td><code>tapPts_cv</code></td><td><code>std(ni) / mean(ni)</code> — inconsistency of points per stroke</td><td class="num">.057</td><td style="color:var(--new)">✔ keep · new</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>6</td><td><code>tDiff_max</code></td><td><code>max(tDiff)</code> — longest pause/hesitation</td><td class="num">.049</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>7</td><td><code>Score</code></td><td><code>data['score']</code> — in-app score (shipped with the file)</td><td class="num">.045</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>8</td><td><code>Total Points</code></td><td><code>Σ ni</code> — total touch points across all strokes</td><td class="num">.044</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>9</td><td><code>duration_s</code></td><td><code>(max(ts) − min(ts)) / 1000</code> — total task time (seconds)</td><td class="num">.042</td><td style="color:var(--new)">✔ keep · new</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>10</td><td><code>tDiff_slope</code></td><td>Slope of a line fit to <code>tDiff</code> vs index — progressive slowing (ms/tap)</td><td class="num">.039</td><td style="color:var(--new)">✔ keep · new</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>11</td><td><code>Mean Tap Points</code></td><td><code>mean(ni)</code> — mean points per stroke</td><td class="num">.038</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="background:rgba(192,140,255,.12)"><td>12</td><td><code>acc_std</code></td><td><code>std</code> over all points of <code>dist / r</code> — accuracy consistency</td><td class="num">.037</td><td style="color:var(--new)">✔ keep · new</td></tr>
+    <tr style="background:rgba(70,211,154,.09)"><td>13</td><td><code>ppLR_stroke</code></td><td><code>min(nL,nR) / max(nL,nR)</code>, sides counted per stroke via centroid — left/right balance</td><td class="num">.037</td><td style="color:var(--ok)">✔ keep · original</td></tr>
+    <tr style="opacity:.55"><td>14</td><td><code>fatigue_ratio</code></td><td><code>mean(tDiff 2nd half) / mean(tDiff 1st half)</code> — fatigue</td><td class="num">.036</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>15</td><td><code>tDiff_median</code></td><td><code>median(tDiff)</code> — median interval (redundant with tDiff_mean/min)</td><td class="num">.033</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>16</td><td><code>Std Tap Points</code></td><td><code>std(ni)</code> — spread of points/stroke (redundant with tapPts_cv)</td><td class="num">.032</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>17</td><td><code>tDiff_mean</code></td><td><code>mean(tDiff)</code> — mean interval (redundant with duration/rate)</td><td class="num">.032</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>18</td><td><code>path_mean</code></td><td>Per-stroke mean of <code>Σ consecutive-point distances</code> — drag length</td><td class="num">.030</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>19</td><td><code>tap_rate</code></td><td><code>nStrokes / duration_s</code> — tap rate (redundant with duration)</td><td class="num">.029</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>20</td><td><code>spread_mean</code></td><td>Per-stroke mean of <code>mean(point distance to centroid)</code> — tremor</td><td class="num">.028</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>21</td><td><code>Max Tap Points</code></td><td><code>max(ni)</code> — most points in a single stroke</td><td class="num">.026</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>22</td><td><code>spread_max</code></td><td><code>max</code> over strokes of spread — peak tremor</td><td class="num">.023</td><td style="color:var(--mut)">✘ exclude</td></tr>
+    <tr style="opacity:.55"><td>23</td><td><code>Tap Count</code></td><td><code>len(taps)</code> — number of strokes (redundant with Total Points/duration)</td><td class="num">.022</td><td style="color:var(--mut)">✘ exclude</td></tr>
+  </table></div>
+  <p class="small">Keep/exclude rule: keep the top 13 by importance (the point of max AUC/Acc/F1 in the pruning table §3). Most dropped features are "redundant" (e.g. tap_rate↔duration, Std/Max Tap Points↔tapPts_cv, tDiff_median↔tDiff_min/max) or low importance (spread/path) — removing them doesn't hurt performance.</p>
+
+  <h2>8. Feature analysis with SHAP (RF tuned, 13 features)</h2>
+  <p class="small">SHAP (TreeExplainer) gives both the <strong>magnitude</strong> and the <strong>direction</strong> of each feature's per-sample influence — unlike Gini importance, which gives magnitude only.</p>
+
+  <h3>8.1 SHAP global importance (mean |SHAP|)</h3>
+  <div style="margin:10px 0"><img src="shap_bar.png" alt="SHAP bar" style="max-width:100%;border:1px solid var(--line);border-radius:10px"></div>
+
+  <h3>8.2 SHAP summary / beeswarm (direction)</h3>
+  <div style="margin:10px 0"><img src="shap_beeswarm.png" alt="SHAP beeswarm" style="max-width:100%;border:1px solid var(--line);border-radius:10px"></div>
+  <p class="small">Each dot = 1 file · X axis = SHAP (right = pushes toward PD) · red = high feature value, blue = low.</p>
+
+  <h3>8.3 Magnitude + direction summary table</h3>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Feature</th><th class="num">mean|SHAP|</th><th class="num">corr(value,SHAP)</th><th>High value pushes to</th><th>Interpretation</th></tr>
+    <tr><td>1</td><td style="color:var(--new)"><code>tDiff_std</code></td><td class="num">.066</td><td class="num">+0.52</td><td style="color:var(--pd);font-weight:700">PD</td><td>highly variable rhythm → PD</td></tr>
+    <tr><td>2</td><td><code>mean_acc</code></td><td class="num">.060</td><td class="num">+0.62</td><td style="color:var(--pd);font-weight:700">PD</td><td>taps far from target (low accuracy) → PD</td></tr>
+    <tr><td>3</td><td style="color:var(--new)"><code>tDiff_cv</code></td><td class="num">.045</td><td class="num">+0.75</td><td style="color:var(--pd);font-weight:700">PD</td><td>irregular rhythm → PD</td></tr>
+    <tr><td>4</td><td><code>tDiff_min</code></td><td class="num">.037</td><td class="num">−0.41</td><td style="color:var(--ct);font-weight:700">Control</td><td>has a clear fast burst → Control</td></tr>
+    <tr><td>5</td><td><code>Total Points</code></td><td class="num">.034</td><td class="num">−0.83</td><td style="color:var(--ct);font-weight:700">Control</td><td>many total points → Control*</td></tr>
+    <tr><td>6</td><td><code>Score</code></td><td class="num">.034</td><td class="num">−0.86</td><td style="color:var(--ct);font-weight:700">Control</td><td>high score → Control</td></tr>
+    <tr><td>7</td><td style="color:var(--new)"><code>tapPts_cv</code></td><td class="num">.034</td><td class="num">+0.78</td><td style="color:var(--pd);font-weight:700">PD</td><td>inconsistent tap size → PD</td></tr>
+    <tr><td>8</td><td><code>Mean Tap Points</code></td><td class="num">.030</td><td class="num">−0.48</td><td style="color:var(--ct);font-weight:700">Control</td><td>more points per tap → Control*</td></tr>
+    <tr><td>9</td><td style="color:var(--new)"><code>tDiff_slope</code></td><td class="num">.022</td><td class="num">+0.09</td><td style="color:var(--pd);font-weight:700">PD</td><td>progressive slowing → PD (weak)</td></tr>
+    <tr><td>10</td><td style="color:var(--new)"><code>duration_s</code></td><td class="num">.020</td><td class="num">−0.62</td><td style="color:var(--ct);font-weight:700">Control</td><td>took longer → Control*</td></tr>
+    <tr><td>11</td><td><code>tDiff_max</code></td><td class="num">.019</td><td class="num">+0.61</td><td style="color:var(--pd);font-weight:700">PD</td><td>has long pauses/hesitation → PD</td></tr>
+    <tr><td>12</td><td><code>ppLR_stroke</code></td><td class="num">.015</td><td class="num">−0.78</td><td style="color:var(--ct);font-weight:700">Control</td><td>balanced left-right alternation → Control</td></tr>
+    <tr><td>13</td><td style="color:var(--new)"><code>acc_std</code></td><td class="num">.010</td><td class="num">+0.13</td><td style="color:var(--pd);font-weight:700">PD</td><td>inconsistent accuracy → PD (weak)</td></tr>
+  </table></div>
+  <p class="small">* <code>Total Points</code>/<code>Mean Tap Points</code>/<code>duration_s</code> have SHAP direction opposite to their raw mean — because SHAP is a <em>conditional/interaction</em> effect: once the model knows the rhythm variability, the point-count features act as a counter-adjustment.</p>
+
+  <div class="callout new"><strong>SHAP confirms:</strong> rhythm variability (<code>tDiff_std</code>, <code>tDiff_cv</code>) is the strongest and clearest PD signal in both magnitude and direction — matching bradykinesia/arrhythmia. PD signature = variable rhythm + inaccurate/inconsistent taps; Control signature = high score + balanced left-right alternation + a clear fast burst. (4 of the 6 features that push toward PD are new features.)</div>
+
+  <h2>9. Finding a high-Recall operating point — for PD screening</h2>
+  <p class="small">
+    A <strong>screening</strong> task wants <strong>high Sensitivity (PD Recall)</strong> — miss as few patients as possible (low False Negative), trading off more False Positives (sent for confirmatory testing).
+    A key metric is <strong>NPV</strong> (if the result says "normal", how likely it really is). Using RF tuned + 13 features · OOF (group CV) · AUC 0.791 · PD 622 / Control 784.
+  </p>
+  <div class="scroll"><table>
+    <tr><th>threshold</th><th class="num">Sens (PD Recall)</th><th class="num">Spec</th><th class="num">PPV</th><th class="num">NPV</th><th class="num">F1</th><th class="num">Acc</th><th class="num">missed PD (FN)</th><th class="num">false alarm (FP)</th></tr>
+    <tr><td>0.50 (default)</td><td class="num">0.664</td><td class="num">0.783</td><td class="num">0.708</td><td class="num">0.746</td><td class="num">0.685</td><td class="num">0.730</td><td class="num">209</td><td class="num">170</td></tr>
+    <tr><td>0.45</td><td class="num">0.714</td><td class="num">0.716</td><td class="num">0.666</td><td class="num">0.759</td><td class="num">0.689</td><td class="num">0.715</td><td class="num">178</td><td class="num">223</td></tr>
+    <tr><td>0.40</td><td class="num">0.765</td><td class="num">0.642</td><td class="num">0.629</td><td class="num">0.775</td><td class="num">0.690</td><td class="num">0.696</td><td class="num">146</td><td class="num">281</td></tr>
+    <tr><td>0.35</td><td class="num">0.807</td><td class="num">0.554</td><td class="num">0.589</td><td class="num">0.783</td><td class="num">0.681</td><td class="num">0.666</td><td class="num">120</td><td class="num">350</td></tr>
+    <tr style="background:rgba(255,213,107,.10)"><td>0.315 · target Sens≥0.85</td><td class="num">0.857</td><td class="num">0.482</td><td class="num">0.568</td><td class="num">0.809</td><td class="num">0.683</td><td class="num">0.652</td><td class="num">89</td><td class="num">—</td></tr>
+    <tr class="best"><td><strong>0.275 · target Sens≥0.90 ★ recommended</strong></td><td class="num"><strong>0.900</strong></td><td class="num">0.393</td><td class="num">0.541</td><td class="num"><strong>0.832</strong></td><td class="num">0.675</td><td class="num">0.632</td><td class="num"><strong>62</strong></td><td class="num">—</td></tr>
+    <tr style="background:rgba(255,213,107,.10)"><td>0.215 · target Sens≥0.95</td><td class="num">0.950</td><td class="num">0.269</td><td class="num">0.508</td><td class="num">0.872</td><td class="num">0.662</td><td class="num">0.598</td><td class="num">31</td><td class="num">—</td></tr>
+    <tr><td>0.15</td><td class="num">0.981</td><td class="num">0.124</td><td class="num">0.470</td><td class="num">0.890</td><td class="num">0.636</td><td class="num">0.503</td><td class="num">12</td><td class="num">687</td></tr>
+    <tr style="opacity:.7"><td>Youden (balanced) 0.507</td><td class="num">0.659</td><td class="num">0.790</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">212</td><td class="num">—</td></tr>
+  </table></div>
+
+  <div class="callout ok"><strong>Recommended for screening: threshold ≈ 0.275 (target Sensitivity 0.90).</strong>
+    Catches 90% of PD — misses only <strong>62 of 622 cases</strong> (vs 209 missed at default 0.5), NPV 0.83 (if it says normal, ~83% confidence).
+    Trade-off: Specificity 0.39 → many false positives, but acceptable for first-line screening since positives are sent for confirmatory testing.
+  </div>
+  <div class="callout"><strong>Choose by strictness:</strong> to miss the fewest → use thr 0.215 (Sens 0.95, 31 missed) but false alarms rise further;
+    for balance (general diagnosis, not pure screening) → use default 0.5 or Youden. <br>
+    Note: these are for dualtap alone — a real screening pipeline should combine multiple tasks (multimodal) to improve Specificity at the high-Sensitivity operating point.
+  </div>
+
+  <h3>Confusion matrix — comparing 3 thresholds (PD 622 / Control 784)</h3>
+  <div style="display:flex;gap:20px;flex-wrap:wrap">
+    <div>
+      <h3>thr 0.50 (default) <small style="color:var(--mut);font-weight:400;display:block;font-size:.72rem">Sens 0.664 · Spec 0.783</small></h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">true CT</div><div class="cmcell tn"><div class="v">614</div>TN</div><div class="cmcell fp"><div class="v">170</div>FP</div>
+        <div class="cmhdr">true PD</div><div class="cmcell fn"><div class="v">209</div>FN</div><div class="cmcell tp"><div class="v">413</div>TP</div>
+      </div>
+      <p class="small" style="margin:6px 0 0">missed 209 PD cases</p>
+    </div>
+    <div>
+      <h3 style="color:var(--gold)">thr 0.275 ★ screening <small style="color:var(--mut);font-weight:400;display:block;font-size:.72rem">Sens 0.90 · Spec 0.393</small></h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">true CT</div><div class="cmcell tn"><div class="v">308</div>TN</div><div class="cmcell fp"><div class="v">476</div>FP</div>
+        <div class="cmhdr">true PD</div><div class="cmcell fn"><div class="v">62</div>FN</div><div class="cmcell tp"><div class="v">560</div>TP</div>
+      </div>
+      <p class="small" style="margin:6px 0 0">missed PD <span style="color:var(--ok)">down to 62</span> · send onward for testing</p>
+    </div>
+    <div>
+      <h3>thr 0.215 (strict) <small style="color:var(--mut);font-weight:400;display:block;font-size:.72rem">Sens 0.95 · Spec 0.269</small></h3>
+      <div class="cm">
+        <div></div><div class="cmhdr">pred CT</div><div class="cmhdr">pred PD</div>
+        <div class="cmhdr">true CT</div><div class="cmcell tn"><div class="v">211</div>TN</div><div class="cmcell fp"><div class="v">573</div>FP</div>
+        <div class="cmhdr">true PD</div><div class="cmcell fn"><div class="v">31</div>FN</div><div class="cmcell tp"><div class="v">591</div>TP</div>
+      </div>
+      <p class="small" style="margin:6px 0 0">missed PD <span style="color:var(--ok)">down to 31</span> · high false alarm</p>
+    </div>
+  </div>
+  <p class="small" style="margin-top:8px">Clearly, lowering the threshold shrinks the <span style="color:var(--pd)">FN (missed PD)</span> cell (209 → 62 → 31) but grows <span style="color:var(--pd)">FP (false alarms on Control)</span> (170 → 476 → 573). Choose based on how many "missed patients" you can tolerate vs the added confirmatory-testing burden.</p>
+
+  <h2>10. Appendix — rationale + detailed computation of all 23 features</h2>
+
+  <h3>10.0 Shared intermediate variables</h3>
+  <p class="small">Every feature is built from these variables (extracted from <code>recording.taps</code> + <code>circleL/R</code>):</p>
+  <div class="scroll"><table>
+    <tr><th>Symbol</th><th>Definition</th></tr>
+    <tr><td><code>N</code></td><td>Number of strokes (taps) = <code>len(taps)</code></td></tr>
+    <tr><td><code>strokeᵢ</code></td><td>The i-th tap, with several touch points, each = <code>{x, y, ts}</code> (ts = epoch ms)</td></tr>
+    <tr><td><code>nᵢ</code></td><td>Number of points in strokeᵢ = <code>len(strokeᵢ.data)</code></td></tr>
+    <tr><td><code>(mxᵢ, myᵢ)</code></td><td>Centroid of strokeᵢ = <code>(mean(x), mean(y))</code> of its points</td></tr>
+    <tr><td><code>tsᵢ</code></td><td>Mid-time of strokeᵢ = <code>mean(ts of all points in strokeᵢ)</code></td></tr>
+    <tr><td><code>tDiff</code></td><td>List of intervals between adjacent taps = <code>[ts₂−ts₁, ts₃−ts₂, …]</code> (N−1 values, ms)</td></tr>
+    <tr><td><code>r</code></td><td>Target circle radius = <code>circleL.r</code> (= 56 in this set)</td></tr>
+    <tr><td><code>side(point)</code></td><td>Per-point midpoint rule: if <code>(x−cLx) ≥ (cRx−x)</code> → <b>right</b> side, else <b>left</b></td></tr>
+    <tr><td><code>dist(point)</code></td><td>Distance from point to the "center of the chosen-side circle" = <code>√((x−cx)²+(y−cy)²)</code></td></tr>
+    <tr><td><code>nL, nR</code></td><td>Number of strokes whose centroid is nearer the left / right circle (counted "per stroke")</td></tr>
+  </table></div>
+
+  <h3>10.1 Group A — tap count/size (from nᵢ)</h3>
+  <div class="scroll"><table>
+    <tr><th>Feature</th><th>Formula</th><th>Rationale (why it separates PD)</th></tr>
+    <tr><td><code>Tap Count</code></td><td><code>N</code></td><td>Total taps in the fixed time — fewer = slow tapping (bradykinesia)</td></tr>
+    <tr><td><code>Total Points</code></td><td><code>Σ nᵢ</code></td><td>Total touch points — abnormally many = finger drag/tremor producing extra samples</td></tr>
+    <tr><td><code>Mean Tap Points</code></td><td><code>mean(nᵢ)</code></td><td>Mean points per tap — crisp taps (normal) give few points; PD holding/tremor gives more points per tap (each tap takes longer)</td></tr>
+    <tr><td><code>Max Tap Points</code></td><td><code>max(nᵢ)</code></td><td>The "longest/most-tremulous" tap — captures the worst-case event</td></tr>
+    <tr><td><code>Std Tap Points</code></td><td><code>std(nᵢ)</code></td><td>Spread of points per tap (raw scale)</td></tr>
+    <tr><td><code>tapPts_cv</code></td><td><code>std(nᵢ) / mean(nᵢ)</code></td><td>Inconsistency of "tap size" normalized by the mean — removes the mean-points effect, leaving only "relative irregularity". PD taps short then long inconsistently → high value. (Better than Std Tap Points, which is still scale-bound.)</td></tr>
+  </table></div>
+
+  <h3>10.2 Group B — spatial accuracy (from dist, r)</h3>
+  <div class="scroll"><table>
+    <tr><th>Feature</th><th>Formula</th><th>Rationale</th></tr>
+    <tr><td><code>mean_acc</code></td><td><code>mean( dist / r )</code> over all points</td><td>Mean distance to target divided by radius (normalizes circle size) — &lt;1 = inside the circle; higher = farther from target (low accuracy) → PD</td></tr>
+    <tr><td><code>acc_std</code></td><td><code>std( dist / r )</code> over all points</td><td>"Inconsistency" of accuracy — normal subjects hit the target consistently (low std); PD hits then misses, distances scatter (high std). A different dimension than mean_acc: one is "average accuracy", the other is "how consistent the accuracy is"</td></tr>
+  </table></div>
+
+  <h3>10.3 Group C — left-right balance (from nL, nR)</h3>
+  <div class="scroll"><table>
+    <tr><th>Feature</th><th>Formula</th><th>Rationale</th></tr>
+    <tr><td><code>ppLR_stroke</code></td><td><code>min(nL, nR) / max(nL, nR)</code><br>(if denominator 0 → 0)</td><td>Assign a "side" to each tap from its centroid (1 tap = 1 vote, left or right), then compare the smaller/larger side ratio. Value = 1 means equal left-right taps (good balance = Control); near 0 means leaning to one side (PD using a non-dominant hand/side, or mis-tapping the wrong side). <b>Counted per stroke</b> to remove the confound of points-per-tap (unlike the old version counted per point, which was skewed by a tremor producing many points on one side)</td></tr>
+  </table></div>
+
+  <h3>10.4 Group D — rhythm/timing (from ts, tDiff)</h3>
+  <div class="scroll"><table>
+    <tr><th>Feature</th><th>Formula</th><th>Rationale</th></tr>
+    <tr><td><code>tDiff_mean</code></td><td><code>mean(tDiff)</code></td><td>Mean inter-tap interval — larger = slower tapping</td></tr>
+    <tr><td><code>tDiff_median</code></td><td><code>median(tDiff)</code></td><td>Median interval (more outlier-robust than mean)</td></tr>
+    <tr><td><code>tDiff_min</code></td><td><code>min(tDiff)</code></td><td>Fastest achievable rhythm — Control often has a clear fast burst</td></tr>
+    <tr><td><code>tDiff_max</code></td><td><code>max(tDiff)</code></td><td>Longest pause/hesitation (freezing/hesitation) → PD</td></tr>
+    <tr><td><code>tDiff_std</code></td><td><code>std(tDiff)</code></td><td><b>Rhythm irregularity</b> — tapping not in a steady beat = PD arrhythmia (the #1 feature by SHAP)</td></tr>
+    <tr><td><code>tDiff_cv</code></td><td><code>std(tDiff) / mean(tDiff)</code></td><td>Normalized rhythm variability — separates "erratic rhythm" from "just slow" (slow-but-steady has low cv; erratic PD has high cv)</td></tr>
+    <tr><td><code>tDiff_slope</code></td><td>Slope <code>a</code> from line fit <code>tDiff ≈ a·(index) + b</code> (least-squares over indices 0,1,2,…)</td><td>Whether inter-tap intervals keep "increasing" through the test. <code>a &gt; 0</code> = progressive slowing / decrement — a hallmark of PD bradykinesia under repetitive tapping; <code>a ≈ 0</code> = steady. Needs ≥3 values to compute, else = 0</td></tr>
+    <tr><td><code>duration_s</code></td><td><code>(max(ts) − min(ts)) / 1000</code></td><td>Total time spent on the whole task (seconds)</td></tr>
+    <tr><td><code>tap_rate</code></td><td><code>N / duration_s</code></td><td>Tap rate (taps/second) — low = bradykinesia</td></tr>
+    <tr><td><code>fatigue_ratio</code></td><td><code>mean(tDiff 2nd half) / mean(tDiff 1st half)</code></td><td>Compares second-half vs first-half rhythm — &gt;1 = slowing over time (fatigue). Needs ≥4 tDiff values</td></tr>
+  </table></div>
+
+  <h3>10.5 Group E — tremor/path within each tap (intra-stroke geometry)</h3>
+  <div class="scroll"><table>
+    <tr><th>Feature</th><th>Formula</th><th>Rationale</th></tr>
+    <tr><td><code>spread_mean</code></td><td>Mean over strokes of <code>mean( √((x−mx)²+(y−my)²) )</code> (point distance to that tap's centroid)</td><td>"Fuzziness" of points within each tap — crisp taps cluster tightly (low spread); tremor/drag scatters points (high spread) → tremor</td></tr>
+    <tr><td><code>spread_max</code></td><td><code>max</code> of the above spread over all strokes</td><td>The most tremulous/fuzzy tap</td></tr>
+    <tr><td><code>path_mean</code></td><td>Mean over strokes of <code>Σ √((xⱼ−xⱼ₋₁)²+(yⱼ−yⱼ₋₁)²)</code> (sum of consecutive point distances within a tap)</td><td>Length of the line the finger drags within one tap — a single-point tap is short; drag/tremor makes the line long</td></tr>
+  </table></div>
+
+  <h3>10.6 Group F — app score</h3>
+  <div class="scroll"><table>
+    <tr><th>Feature</th><th>Formula</th><th>Rationale</th></tr>
+    <tr><td><code>Score</code></td><td><code>data['score']</code></td><td>The score the app computes (shipped with the file) — high = performed well = tends to Control</td></tr>
+  </table></div>
+
+  <div class="callout"><strong>23-feature mapping summary:</strong> Group A (6) from <code>nᵢ</code> · B (2) from <code>dist</code> · C (1) from <code>nL/nR</code> · D (10) from <code>ts/tDiff</code> · E (3) from intra-tap geometry · F (1) from score = <strong>23 features</strong>. (Note: the original <code>ppInsideToAll</code>/<code>ppLeftToRight</code> were replaced by the improved <code>mean_acc</code>/<code>ppLR_stroke</code> — see §1.)</div>
+
+  <p class="foot">RF tuned (400/d10/leaf4/maxsamp0.8/balanced — all sections use 400 trees) · StratifiedGroupKFold(10, seed=42) · group=patient · pooled OOF · SHAP TreeExplainer · threshold analysis · DualTapReview</p>
+</div>
+</div>
+
+<script>
+  function setLang(l){
+    document.documentElement.lang = l;
+    document.getElementById('th').classList.toggle('on', l==='th');
+    document.getElementById('en').classList.toggle('on', l==='en');
+    document.getElementById('bTH').classList.toggle('on', l==='th');
+    document.getElementById('bEN').classList.toggle('on', l==='en');
+  }
+  document.getElementById('bTH').addEventListener('click',()=>setLang('th'));
+  document.getElementById('bEN').addEventListener('click',()=>setLang('en'));
+  setLang('th');
+</script>
 </body>
 </html>
